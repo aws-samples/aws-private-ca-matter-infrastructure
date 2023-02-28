@@ -1,0 +1,18 @@
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+.gradle
+gradle/
+.vscode/
+.idea/
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out/
+
+# DAC issuing lambda
+!lambda/*.js
+!lambda/*.java
+lambda/build
+lambda/bin

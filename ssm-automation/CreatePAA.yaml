@@ -1,0 +1,163 @@
+description: |-
+  ### Document name - CreatePAA
+
+  ## What does this document do?
+  This document creates a Product Attestation Authority (PAA) CA and issues its certificate.
+
+  ## Input Parameters
+  * CommonName: (Optional) The Common Name to be included in the subject of the issued certificate.
+  * Organization: (Optional) The Organization to be included in the subject of the issued certificate.
+  * VendorId: (Required) The VendorId to be included in the subject of the issued certificate.
+  * ValidityInYears: (Required) The number of years for which the PAI certificate will be valid.
+  * AutomationAssumeRole: (Required) The role ARN to assume during automation execution.
+
+  ## Output Parameters
+  * CreateCertificateAuthority.CertificateAuthorityArn: The ARN of the created PAI.
+schemaVersion: '0.3'
+assumeRole: '{{ AutomationAssumeRole }}'
+outputs:
+  - CreateCertificateAuthority.CertificateAuthorityArn
+parameters:
+  CommonName:
+    description: (Optional) The Common Name to be included in the subject of the issued certificate.
+    type: String
+    default: ''
+  Organization:
+    description: (Optional) The Organization to be included in the subject of the issued certificate.
+    type: String
+    default: ''
+  VendorId:
+    description: (Required) The VendorID to be included in the subject of the issued certificate.
+    type: String
+  ValidityInYears:
+    description: (Required) The number of years for which the PAA certificate will be valid.
+    type: Integer
+  AutomationAssumeRole:
+    description: (Required) The role ARN to assume during automation execution.
+    type: String
+mainSteps:
+  - name: GetCustomAttributes
+    action: 'aws:executeScript'
+    onFailure: Abort
+    inputs:
+      Runtime: python3.7
+      Handler: get_custom_attributes
+      InputPayload:
+        CommonName: '{{ CommonName }}'
+        VendorId: '{{ VendorId }}'
+        Organization: '{{ Organization }}'
+      Script: |
+        def get_custom_attributes(events, context):
+
+          customAttributes = [
+            {
+              "ObjectIdentifier": "1.3.6.1.4.1.37244.2.1",
+              "Value": events.get("VendorId")
+            }
+          ]
+
+          if (events.get("CommonName") != ''):
+            customAttributes.append({
+              "ObjectIdentifier": "2.5.4.3",
+              "Value": events.get("CommonName")
+            })
+
+          if (events.get("Organization") != ''):
+            customAttributes.append({
+              "ObjectIdentifier": "2.5.4.10",
+              "Value": events.get("Organization")
+            })
+
+          return {'CustomAttributes': customAttributes}
+    outputs:
+      - Name: CustomAttributes
+        Selector: $.Payload.CustomAttributes
+        Type: MapList
+  - name: CreateCertificateAuthority
+    action: 'aws:executeAwsApi'
+    timeoutSeconds: 120
+    maxAttempts: 5
+    onFailure: Abort
+    inputs:
+      Service: acm-pca
+      Api: CreateCertificateAuthority
+      KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
+      CertificateAuthorityConfiguration:
+        KeyAlgorithm: EC_prime256v1
+        SigningAlgorithm: SHA256WITHECDSA
+        Subject:
+          CustomAttributes: '{{ GetCustomAttributes.CustomAttributes }}'
+      CertificateAuthorityType: ROOT
+    outputs:
+      - Name: CertificateAuthorityArn
+        Selector: $.CertificateAuthorityArn
+        Type: String
+  - name: WaitForCA
+    action: 'aws:waitForAwsResourceProperty'
+    onFailure: Abort
+    timeoutSeconds: 600
+    inputs:
+      Service: acm-pca
+      Api: DescribeCertificateAuthority
+      CertificateAuthorityArn: '{{ CreateCertificateAuthority.CertificateAuthorityArn }}'
+      PropertySelector: $.CertificateAuthority.Status
+      DesiredValues:
+        - PENDING_CERTIFICATE
+  - name: GetCertificateAuthorityCsr
+    action: 'aws:executeAwsApi'
+    timeoutSeconds: 120
+    maxAttempts: 5
+    onFailure: Abort
+    inputs:
+      Service: acm-pca
+      Api: GetCertificateAuthorityCsr
+      CertificateAuthorityArn: '{{ CreateCertificateAuthority.CertificateAuthorityArn }}'
+    outputs:
+      - Name: CSR
+        Selector: $.Csr
+        Type: String
+  - name: IssueCertificate
+    action: 'aws:executeAwsApi'
+    timeoutSeconds: 120
+    maxAttempts: 5
+    onFailure: Abort
+    inputs:
+      Service: acm-pca
+      Api: IssueCertificate
+      CertificateAuthorityArn: '{{ CreateCertificateAuthority.CertificateAuthorityArn }}'
+      TemplateArn: 'arn:aws:acm-pca:::template/RootCACertificate_APIPassthrough/V1'
+      Csr: '{{ GetCertificateAuthorityCsr.CSR }}'
+      SigningAlgorithm: SHA256WITHECDSA
+      Validity:
+        Value: '{{ ValidityInYears }}'
+        Type: YEARS
+    outputs:
+      - Name: CertificateArn
+        Selector: $.CertificateArn
+        Type: String
+  - name: GetCertificate
+    action: 'aws:executeAwsApi'
+    onFailure: Abort
+    timeoutSeconds: 120
+    maxAttempts: 5
+    inputs:
+      Service: acm-pca
+      Api: GetCertificate
+      CertificateAuthorityArn: '{{ CreateCertificateAuthority.CertificateAuthorityArn }}'
+      CertificateArn: '{{ IssueCertificate.CertificateArn }}'
+    outputs:
+      - Name: Certificate
+        Selector: $.Certificate
+        Type: String
+  - name: ImportCA
+    action: 'aws:executeAwsApi'
+    timeoutSeconds: 120
+    maxAttempts: 5
+    onFailure: Abort
+    inputs:
+      Service: acm-pca
+      Api: ImportCertificateAuthorityCertificate
+      Certificate: '{{ GetCertificate.Certificate }}'
+      CertificateAuthorityArn: '{{ CreateCertificateAuthority.CertificateAuthorityArn }}'
+    isCritical: 'true'
+    isEnd: 'true'

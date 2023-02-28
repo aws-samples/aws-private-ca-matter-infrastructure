@@ -1,0 +1,9 @@
+[ req ]
+output_password = 1234
+req_extensions = v3_extensions
+
+[ v3_extensions ]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+subjectKeyIdentifier = hash
+

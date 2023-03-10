@@ -12,7 +12,10 @@ Trust Relationship:
         {
             "Effect": "Allow",
             "Principal": {
-                "Service": "ssm.amazonaws.com"
+                "Service": [
+                    "iam.amazonaws.com",
+                    "ssm.amazonaws.com"
+                ]
             },
             "Action": "sts:AssumeRole"
         }

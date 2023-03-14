@@ -41,6 +41,7 @@ import java.time.Period;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -51,6 +52,9 @@ import java.util.stream.Stream;
  */
 @AllArgsConstructor
 public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
+
+  private static final String DEFAULT_VALIDITY = "1865";
+
   private final JsonDeserializer<org.joda.time.DateTime> dateTimeDeserializer =
           (json, typeOfT, context) -> DateTime.parse(json.getAsString());
   protected final Gson gson = new GsonBuilder()
@@ -271,7 +275,7 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
     }
 
     try {
-      val validityPeriod = Period.ofYears(5);   // Must finish before PAI expires (8y after creation in our sample).
+      val validityPeriod = Long.valueOf(Optional.ofNullable(System.getenv("dacValidityInDays")).orElse(DEFAULT_VALIDITY)).longValue();
       return issueDeviceAttestationCertificate.run(s3Key.pcaArn, s3Key.pid, paiSubjDic, csr, validityPeriod);
     } catch (ResourceNotFoundException | InvalidArnException | InvalidArgsException | MalformedCsrException | IllegalArgumentException ex) {
       throw new IllegalArgumentException("Couldn't sign the request in " + bucket + '/' +

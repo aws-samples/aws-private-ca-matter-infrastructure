@@ -48,7 +48,7 @@ public class IssueDeviceAttestationCertificate {
                               @NonNull final String pid,
                               @NonNull Map<String, String> paiSubjDic,
                               @NonNull final String csr,
-                              final long validityPeriod) throws IOException, InterruptedException {
+                              final long validityInDays) throws IOException, InterruptedException {
 
       // Parse the PAI CA certificate.
       if (paiSubjDic.containsKey("1.3.6.1.4.1.37244.2.2") && !paiSubjDic.get("1.3.6.1.4.1.37244.2.2").equals(pid)) {
@@ -63,7 +63,7 @@ public class IssueDeviceAttestationCertificate {
       // Set the validity period for the certificate to be issued.
       val validity = Validity.builder()
               .type(ValidityPeriodType.DAYS)
-              .value(validityPeriod)
+              .value(validityInDays)
               .build();
 
       // Define custom attributes

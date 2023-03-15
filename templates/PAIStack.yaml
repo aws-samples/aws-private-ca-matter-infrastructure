@@ -9,7 +9,7 @@ Parameters:
     Type: Number
     Description: Validity in days for this PAI
   dacValidityInDays:
-    Type: String
+    Type: Number
     Description: Validity in days for DACs issued by the Lambda.
   paaArn:
     Type: String

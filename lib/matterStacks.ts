@@ -100,9 +100,9 @@ export class MatterStack extends Stack {
                 description: "Validity in days for new PAI(s)"
             }).valueAsNumber;
             const dacValidityInDays = new CfnParameter(this, "dacValidityInDays", {
-                type: "String",
+                type: "Number",
                 description: "Validity in days for DACs issued by the Lambda"
-            }).valueAsString;
+            }).valueAsNumber;
             const paaArn = new CfnParameter(this, "paaArn", {
                 type: "String",
                 description: "ARN of the PAA"
@@ -883,7 +883,7 @@ export class MatterStack extends Stack {
         }).getResponseField('Certificate');
     }
 
-    private createDacIssuingLambda(dacValidityInDays: string) {
+    private createDacIssuingLambda(dacValidityInDays: number) {
         const lambdaTimeout = Duration.minutes(1);
         const lambdaBatchSize = 5;
         const pcaIssueCertificateMaxTps = 25;
@@ -918,7 +918,7 @@ export class MatterStack extends Stack {
 
                 logRetention: RetentionDays.TWO_MONTHS,
                 environment: {
-                    "dacValidityInDays": dacValidityInDays
+                    "dacValidityInDays": dacValidityInDays.toString()
                 }
             },
             maxReceiveCount: 5, // Number of retries

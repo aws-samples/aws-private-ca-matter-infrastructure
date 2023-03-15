@@ -53,7 +53,7 @@ import java.util.stream.Stream;
 @AllArgsConstructor
 public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
 
-  private static final String DEFAULT_VALIDITY = "1865";
+  private static final String DEFAULT_VALIDITY_IN_DAYS = "1865";
 
   private final JsonDeserializer<org.joda.time.DateTime> dateTimeDeserializer =
           (json, typeOfT, context) -> DateTime.parse(json.getAsString());
@@ -275,9 +275,9 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
     }
 
     try {
-      val validityPeriod = Long.valueOf(Optional.ofNullable(System.getenv("dacValidityInDays")).orElse(DEFAULT_VALIDITY)).longValue();
-      return issueDeviceAttestationCertificate.run(s3Key.pcaArn, s3Key.pid, paiSubjDic, csr, validityPeriod);
-    } catch (ResourceNotFoundException | InvalidArnException | InvalidArgsException | MalformedCsrException | IllegalArgumentException ex) {
+      val validityInDays = Long.valueOf(Optional.ofNullable(System.getenv("dacValidityInDays")).orElse(DEFAULT_VALIDITY_IN_DAYS)).longValue();
+      return issueDeviceAttestationCertificate.run(s3Key.pcaArn, s3Key.pid, paiSubjDic, csr, validityInDays);
+    } catch (ResourceNotFoundException | InvalidArnException | InvalidArgsException | MalformedCsrException | IllegalArgumentException ex | NumberFormatException ex) {
       throw new IllegalArgumentException("Couldn't sign the request in " + bucket + '/' +
               s3Key + ':' + version, ex);
     } catch (Exception ex) {

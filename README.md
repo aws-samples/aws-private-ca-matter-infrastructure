@@ -95,12 +95,12 @@ When deploying the application, you can configure it to support different use ca
    $ aws s3 cp s3://matterstackpai-dacinputs3tosqss3bucket<remainder of your bucket name>/arn:aws:acm-pca:<region>:<account>:certificate-authority/<PAI UUID>/<PID>/cert.pem .
 
    $ echo "Change the DAC validity as needed"
-   $ aws lambda update-function-configuration --function-name <DAC_ISSUING_LAMBDA_NAME> --environment 'Variables {dacValidityInDays=<VALIDITY_IN_DAYS>}'
+   $ aws lambda update-function-configuration --function-name <DAC_ISSUING_LAMBDA_NAME> --environment 'Variables={dacValidityInDays=<VALIDITY_IN_DAYS>}'
    ```
 
 ### Parameters
 1. `--parameters vendorId=<VID>` - The vendor ID to be assigned to the CA. Note that when creating PAIs this value should be the same as in the PAA. This must be a 4-digit hex value.
-2. `--parameters productIds=<PID1>,<PID2>,...` - The productIds to be assigned to PAIs. Note that the number of PIDs provided should equal the `generatePaiCnt` parameter's value. This must be a 4-digit hex value.
+2. `--parameters productIds=<PID1>,<PID2>,...` - The productIds to be assigned to PAIs. Note that the number of PIDs provided should equal the `generatePaiCnt` parameter's value. These must be 4-digit hex values.
 3. `--parameters validityInDays=<n>` - The PAA/PAI certificate's validity in days.
 4. `--parameters dacValidityInDays=<n>` - The validity in days of the DACs that are issued by the Lambda. This value must be less than the PAI's `validityInDays` value.
 5. `--parameters paaArn=<PAA_ARN>` - The ARN of a PAA, used either to set up Matter PKI infrastructure around it, or to generate a new PAI.

@@ -57,7 +57,7 @@ When deploying the application, you can configure it to support different use ca
 
    ```
    cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters vendorId=<VENDOR_ID> --parameters 
-   productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN>
+   productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
    ```
 4. To generate PAIs in a different AWS Region from the PAA
 
@@ -66,7 +66,7 @@ When deploying the application, you can configure it to support different use ca
 
    ```
    cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters vendorId=<VENDOR_ID> --parameters 
-   productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN>
+   productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
    ```
 5. To add more PAIs to the existing infrastructure
 
@@ -93,13 +93,17 @@ When deploying the application, you can configure it to support different use ca
    $ echo "One way would be to poll s3 key for presence of .pem or .err (should a failure happen) files" 
 
    $ aws s3 cp s3://matterstackpai-dacinputs3tosqss3bucket<remainder of your bucket name>/arn:aws:acm-pca:<region>:<account>:certificate-authority/<PAI UUID>/<PID>/cert.pem .
+
+   $ echo "Change the DAC validity as needed"
+   $ aws lambda update-function-configuration --function-name <DAC_ISSUING_LAMBDA_NAME> --environment 'Variables={dacValidityInDays=<VALIDITY_IN_DAYS>}'
    ```
 
 ### Parameters
-1. `--parameters vendorId=<VID>` - The vendor ID to be assigned to the CA. Note that when creating PAIs this value should be the same as in the PAA.
-2. `--parameters productIds=<PID1>,<PID2>,...` - The productIds to be assigned to PAIs. Note that the number of PIDs provided should equal the `generatePaiCnt` parameter's value.
+1. `--parameters vendorId=<VID>` - The vendor ID to be assigned to the CA. Note that when creating PAIs this value should be the same as in the PAA. This must be a 4-digit hex value.
+2. `--parameters productIds=<PID1>,<PID2>,...` - The productIds to be assigned to PAIs. Note that the number of PIDs provided should equal the `generatePaiCnt` parameter's value. These must be 4-digit hex values.
 3. `--parameters validityInDays=<n>` - The PAA/PAI certificate's validity in days.
-4. `--parameters paaArn=<PAA_ARN>` - The ARN of a PAA, used either to set up Matter PKI infrastructure around it, or to generate a new PAI.
+4. `--parameters dacValidityInDays=<n>` - The validity in days of the DACs that are issued by the Lambda. This value must be less than the PAI's `validityInDays` value.
+5. `--parameters paaArn=<PAA_ARN>` - The ARN of a PAA, used either to set up Matter PKI infrastructure around it, or to generate a new PAI.
 
 ### Context options
 1. `--context generatePaiCnt=<NUM>` - If set, `<NUM>` new PAIs derived from PAA are created.
@@ -112,6 +116,12 @@ When deploying the application, you can configure it to support different use ca
 7. `--context paiOrganizations=<O1>,<02>,...` - If set, these Organizations (O) are included in the Subjects of the PAIs. Note that the number of Organizations provided should equal the `generatePaiCnt` parameter's value.
 8. `--context paiOrganizationalUnits=<OU1>,<0U2>,...` - If set, these OrganizationalUnits (OU) are included in the Subjects of the PAIs. Note that the number of OrganizationalUnits provided should equal the `generatePaiCnt` parameter's value.
 9. `--context paiCommonNames=<CN1>,<CN2>,...` - If set, these CommonNames (CN) are included in the Subjects of the PAIs. Note that the number of CommonNames provided should equal the `generatePaiCnt` parameter's value.
+
+### Hard-Coded Values
+The following list contains some of the values that are hard-coded into the infrastructure. They can all be changed by modifying the CDK code or the CFN template directly.
+1. `Audit Logging Bucket Object Retention` - Objects in the S3 audit logging bucket are retained for `5 years`.
+2. `Audit Logging Bucket Glacier Transition` - Object in the S3 audit logging bucket are transitioned to Glacier after `2 months`.
+3. `CloudWatch Log Group Retention` - Logs in the audit LogGroup are maintained in CloudWatch for `2 months`.
 
 ## Generate a CloudFormation Template
 

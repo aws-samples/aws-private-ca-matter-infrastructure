@@ -8,6 +8,9 @@ Parameters:
   validityInDays:
     Type: Number
     Description: Validity in days for this PAI
+  dacValidityInDays:
+    Type: Number
+    Description: Validity in days for DACs issued by the Lambda.
   paaArn:
     Type: String
     Description: The ARN of the PAA that is used to sign the PAI certificate
@@ -972,6 +975,10 @@ Resources:
       MemorySize: 512
       ReservedConcurrentExecutions: 55
       Runtime: java11
+      Environment:
+        Variables:
+          dacValidityInDays:
+            Ref: dacValidityInDays
       Tags:
         - Key: matterPKITag
           Value: ""
@@ -1479,6 +1486,10 @@ Outputs:
       Fn::GetAtt:
         - CertificatePAI03F296F37
         - CertificateArn
+  DACIssuingLambdaFunctionName:
+    Description: The name of the Lambda Function that issues DACs
+    Value:
+      Ref: SqsToDacIssuingLambdaLambdaFunction63CBA51A
   PAI0:
     Description: The ARN of PAI0
     Value:

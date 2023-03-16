@@ -70,7 +70,7 @@ export class MatterStack extends Stack {
                 }).valueAsNumber;
                 const vendorId = new CfnParameter(this, "vendorId", {
                     type: "String",
-                    description: "If paaArn parameter is not provided, then this vendorId is used to create first PAA"
+                    description: "If paaArn parameter is not provided, then this vendorId is used to create first PAA. This must be a 4-digit hex value."
                 }).valueAsString;
 
                 const commonName = this.node.tryGetContext('paaCommonName') ?? 'PAA';
@@ -89,15 +89,19 @@ export class MatterStack extends Stack {
             // Create PAI
             let prodIds = new CfnParameter(this, "productIds", {
                 type: "List<String>",
-                description: "A list of product IDs to create first PAIs"
+                description: "A list of product IDs to create first PAIs. These must be 4-digit hex values."
             })?.valueAsList;
             const vendorId = new CfnParameter(this, "vendorId", {
                 type: "String",
-                description: "If paaArn parameter is not provided, then this vendorId is used to create PAI(s)"
+                description: "This vendorId is used to create PAI(s). It must be the same as the PAA vendorId and it must be a 4-digit hex value."
             }).valueAsString;
             const validityInDays = new CfnParameter(this, "validityInDays", {
                 type: "Number",
                 description: "Validity in days for new PAI(s)"
+            }).valueAsNumber;
+            const dacValidityInDays = new CfnParameter(this, "dacValidityInDays", {
+                type: "Number",
+                description: "Validity in days for DACs issued by the Lambda"
             }).valueAsNumber;
             const paaArn = new CfnParameter(this, "paaArn", {
                 type: "String",
@@ -141,7 +145,7 @@ export class MatterStack extends Stack {
                 rolePrefix + MatterStack.MATTER_AUDIT_LOGGING_BACKUP_ROLE_NAME)
             this.matterIssueDACRole =
                 Role.fromRoleName(this, "MatterIssueDACRoleInPAIStack", rolePrefix + MatterStack.MATTER_ISSUE_DAC_ROLE)
-            this.createDacIssuingLambda();
+            this.createDacIssuingLambda(dacValidityInDays);
         }
 
         // Regional resources shared between PAA and PAI stacks.
@@ -879,7 +883,7 @@ export class MatterStack extends Stack {
         }).getResponseField('Certificate');
     }
 
-    private createDacIssuingLambda() {
+    private createDacIssuingLambda(dacValidityInDays: number) {
         const lambdaTimeout = Duration.minutes(1);
         const lambdaBatchSize = 5;
         const pcaIssueCertificateMaxTps = 25;
@@ -913,6 +917,9 @@ export class MatterStack extends Stack {
                 reservedConcurrentExecutions: pcaIssueCertificateMaxTps / lambdaBatchSize * lambdaAvgExecTimeInSeconds,
 
                 logRetention: RetentionDays.TWO_MONTHS,
+                environment: {
+                    "dacValidityInDays": dacValidityInDays.toString()
+                }
             },
             maxReceiveCount: 5, // Number of retries
             sqsEventSourceProps: {
@@ -937,5 +944,10 @@ export class MatterStack extends Stack {
             "logs:TestMetricFilter",
             "logs:FilterLogEvents"]
         sqsToLambda.lambdaFunction.logGroup.grant(this.matterAuditorRole, ...auditorLogGroupActions);
+
+        new CfnOutput(this, 'DACIssuingLambdaFunctionName', {
+            value: sqsToLambda.lambdaFunction.functionName,
+            description: 'The name of the Lambda Function that issues DACs',
+        });
     }
 }

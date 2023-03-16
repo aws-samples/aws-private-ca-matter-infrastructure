@@ -70,7 +70,7 @@ export class MatterStack extends Stack {
                 }).valueAsNumber;
                 const vendorId = new CfnParameter(this, "vendorId", {
                     type: "String",
-                    description: "If paaArn parameter is not provided, then this vendorId is used to create first PAA"
+                    description: "If paaArn parameter is not provided, then this vendorId is used to create first PAA. This must be a 4-digit hex value."
                 }).valueAsString;
 
                 const commonName = this.node.tryGetContext('paaCommonName') ?? 'PAA';
@@ -89,11 +89,11 @@ export class MatterStack extends Stack {
             // Create PAI
             let prodIds = new CfnParameter(this, "productIds", {
                 type: "List<String>",
-                description: "A list of product IDs to create first PAIs"
+                description: "A list of product IDs to create first PAIs. These must be 4-digit hex values."
             })?.valueAsList;
             const vendorId = new CfnParameter(this, "vendorId", {
                 type: "String",
-                description: "If paaArn parameter is not provided, then this vendorId is used to create PAI(s)"
+                description: "If paaArn parameter is not provided, then this vendorId is used to create PAI(s). This must be a 4-digit hex value."
             }).valueAsString;
             const validityInDays = new CfnParameter(this, "validityInDays", {
                 type: "Number",

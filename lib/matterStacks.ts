@@ -93,7 +93,7 @@ export class MatterStack extends Stack {
             })?.valueAsList;
             const vendorId = new CfnParameter(this, "vendorId", {
                 type: "String",
-                description: "If paaArn parameter is not provided, then this vendorId is used to create PAI(s). This must be a 4-digit hex value."
+                description: "This vendorId is used to create PAI(s). It must be the same as the PAA vendorId and it must be a 4-digit hex value."
             }).valueAsString;
             const validityInDays = new CfnParameter(this, "validityInDays", {
                 type: "Number",

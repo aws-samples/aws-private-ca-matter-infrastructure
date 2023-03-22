@@ -6,7 +6,7 @@ This repository contains example SSM Automation Documents that can be used by SS
 This process will require the creation of IAM Roles to approve the Change Manager Templates, Approve the Change Manager Requests, and execute the automation documents. Before beginning, please make sure that you have all of the following IAM roles.
 
 ### CreatePAA and CreatePAI Roles
-These roles will be used to execute the automation document which create the PAAs and PAIs.
+These roles will be used to execute the automation documents which create the PAAs and PAIs.
 
 Trust Relationship:
 ```json

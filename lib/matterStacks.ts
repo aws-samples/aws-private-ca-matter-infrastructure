@@ -3,7 +3,22 @@
  * SPDX-License-Identifier: MIT-0
  */
 
-import {Arn, ArnFormat, CfnCondition, CfnDeletionPolicy, CfnOutput, CfnParameter, CfnResource, Duration, Fn, Stack, Tags} from 'aws-cdk-lib';
+import {
+    Arn,
+    ArnFormat,
+    CfnCondition,
+    CfnDeletionPolicy,
+    CfnOutput,
+    CfnParameter,
+    CfnResource,
+    CustomResource,
+    CustomResourceProvider,
+    CustomResourceProviderRuntime,
+    Duration,
+    Fn,
+    Stack,
+    Tags
+} from 'aws-cdk-lib';
 import {Construct, IConstruct} from 'constructs';
 import {
     AccountPrincipal,
@@ -68,10 +83,12 @@ export class MatterStack extends Stack {
                     type: "Number",
                     description: "Validity in days for new PAA"
                 }).valueAsNumber;
-                const vendorId = new CfnParameter(this, "vendorId", {
+                const vendorIdInput = new CfnParameter(this, "vendorId", {
                     type: "String",
                     description: "If paaArn parameter is not provided, then this vendorId is used to create first PAA. This must be a 4-digit hex value."
                 }).valueAsString;
+
+                const vendorId = this.validateVid(vendorIdInput);
 
                 const commonName = this.node.tryGetContext('paaCommonName') ?? 'PAA';
                 const paaActivation = this.createPAA(commonName, this.node.tryGetContext('paaOrganization'), this.node.tryGetContext('paaOrganizationalUnit'), validityInDays, vendorId);
@@ -87,14 +104,10 @@ export class MatterStack extends Stack {
         }
         else {
             // Create PAI
-            let prodIds = new CfnParameter(this, "productIds", {
+            let prodIdsInput = new CfnParameter(this, "productIds", {
                 type: "List<String>",
                 description: "A list of product IDs to create first PAIs. These must be 4-digit hex values."
             })?.valueAsList;
-            const vendorId = new CfnParameter(this, "vendorId", {
-                type: "String",
-                description: "This vendorId is used to create PAI(s). It must be the same as the PAA vendorId and it must be a 4-digit hex value."
-            }).valueAsString;
             const validityInDays = new CfnParameter(this, "validityInDays", {
                 type: "Number",
                 description: "Validity in days for new PAI(s)"
@@ -108,6 +121,8 @@ export class MatterStack extends Stack {
                 description: "ARN of the PAA"
             }).valueAsString;
             paaRegion = Arn.split(paaArn, ArnFormat.SLASH_RESOURCE_NAME).region!;
+
+            const prodIds = this.validatePids(prodIdsInput);
 
             const commonNames = this.node.tryGetContext('paiCommonNames');
             const organizations = this.node.tryGetContext('paiOrganizations');
@@ -125,6 +140,7 @@ export class MatterStack extends Stack {
                 throw Error("The number of OrganizationalUnits in paiOrganizationalUnits must be equal to generatePaiCnt");
             }
 
+            const vendorId = this.getPaaVendorId(paaArn, paaRegion);
             const paaPem = this.getCertificatePem(id, paaArn, paaRegion);
             for (let index = 0; index < parseInt(genPaiCnt); index++) {
                 const commonName = commonNames === undefined ? 'PAI' + index : commonNames.split(',')[index];
@@ -174,6 +190,64 @@ export class MatterStack extends Stack {
                 inst.cfnOptions.condition = createCondition;
             });
         }
+    }
+
+    private getPaaVendorId(paaArn: string, paaRegion: string) {
+        const provider = CustomResourceProvider.getOrCreateProvider(this, 'Custom::LambdaFunctionUtils', {
+            codeDirectory: `${__dirname}`,
+            runtime: CustomResourceProviderRuntime.NODEJS_16_X,
+            description: "Utility Lambda function"
+        });
+        provider.addToRolePolicy({
+            Effect: 'Allow',
+            Action: 'acm-pca:DescribeCertificateAuthority',
+            Resource: paaArn,
+        });
+        return new CustomResource(this, 'ObtainPaaVid', {
+            serviceToken: provider.serviceToken,
+            resourceType: 'Custom::GetPaaVendorIdType',
+            properties: {
+                "command": "getPaaVendorId",
+                "paaArn": paaArn,
+                "paaRegion": paaRegion
+            }
+        }).getAtt('Result').toString();
+    }
+
+    private validatePids(pids: string[]): string[] {
+        const provider = CustomResourceProvider.getOrCreateProvider(this, 'Custom::LambdaFunctionUtils', {
+            codeDirectory: `${__dirname}`,
+            runtime: CustomResourceProviderRuntime.NODEJS_16_X,
+            description: "Utility Lambda function"
+        });
+        const outcome = new CustomResource(this, 'ValidatePid', {
+            serviceToken: provider.serviceToken,
+            resourceType: 'Custom::ValidatePidType',
+            properties: {
+                "command": "validateVidPid",
+                "vid": undefined,
+                "pids": pids
+            }
+        });
+        return outcome.getAtt('pids')!.toStringList();
+    }
+
+    private validateVid(vid: string): string {
+        const provider = CustomResourceProvider.getOrCreateProvider(this, 'Custom::LambdaFunctionUtils', {
+            codeDirectory: `${__dirname}`,
+            runtime: CustomResourceProviderRuntime.NODEJS_16_X,
+            description: "Utility Lambda function"
+        });
+        const outcome = new CustomResource(this, 'ValidateVid', {
+            serviceToken: provider.serviceToken,
+            resourceType: 'Custom::ValidateVidType',
+            properties: {
+                "command": "validateVidPid",
+                "vid": vid,
+                "pids": undefined
+            }
+        });
+        return outcome.getAtt('vid')!.toString();
     }
 
     // Creates the IAM role for issuing and revoking Device Attestation Certificates (DACs)
@@ -559,7 +633,7 @@ export class MatterStack extends Stack {
             enableFileValidation: true,
             bucket: matterAuditLoggingBucket,
             cloudWatchLogGroup: auditLogGroup,
-            encryptionKey: matterAuditLoggingBucket.encryptionKey 
+            encryptionKey: matterAuditLoggingBucket.encryptionKey
         });
         dependencies.push(trail);
 
@@ -615,7 +689,7 @@ export class MatterStack extends Stack {
 
         if (organization !== undefined) {
             customAttributes.push(
-                {                       
+                {
                     objectIdentifier: "2.5.4.10",           // organization
                     value: organization
                 }
@@ -624,7 +698,7 @@ export class MatterStack extends Stack {
 
         if (organizationalUnit !== undefined) {
             customAttributes.push(
-                {                       
+                {
                     objectIdentifier: "2.5.4.11",           // organizationalUnit
                     value: organizationalUnit
                 }
@@ -715,7 +789,7 @@ export class MatterStack extends Stack {
 
         if (organization !== undefined) {
             customAttributes.push(
-                {                       
+                {
                     objectIdentifier: "2.5.4.10",            // organization
                     value: organization
                 }
@@ -724,7 +798,7 @@ export class MatterStack extends Stack {
 
         if (organizationalUnit !== undefined) {
             customAttributes.push(
-                {                       
+                {
                     objectIdentifier: "2.5.4.11",            // organizationalUnit
                     value: organizationalUnit
                 }

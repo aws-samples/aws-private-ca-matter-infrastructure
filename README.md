@@ -51,13 +51,12 @@ When deploying the application, you can configure it to support different use ca
 
    To alter an existing PAA for use with Matter, use the following options:
    ```
-   cdk deploy --parameters paaArn=<PAA_ARN>"
+   cdk deploy --parameters paaArn=<PAA_ARN>
    ```
 3. To generate PAIs in the same AWS Region as the PAA
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters vendorId=<VENDOR_ID> --parameters 
-   productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
    ```
 4. To generate PAIs in a different AWS Region from the PAA
 
@@ -65,8 +64,7 @@ When deploying the application, you can configure it to support different use ca
    (see [AWS Cloud Development Kit documentation](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-environment)):
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters vendorId=<VENDOR_ID> --parameters 
-   productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
    ```
 5. To add more PAIs to the existing infrastructure
 
@@ -74,8 +72,7 @@ When deploying the application, you can configure it to support different use ca
 
    You can view the difference between the new stack and what is already deployed by calling `cdk diff` with the necessary parameters. For example:
    ```
-   cdk diff --context generatePaiCnt=<NUM_PAI> --parameters vendorId=<VENDOR_ID> --parameters 
-   productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN>
+   cdk diff --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN>
    ```
 6. To generate DAC certificates for each individual device to be embedded into its copy of a firmware
 
@@ -99,7 +96,7 @@ When deploying the application, you can configure it to support different use ca
    ```
 
 ### Parameters
-1. `--parameters vendorId=<VID>` - The vendor ID to be assigned to the CA. Note that when creating PAIs this value should be the same as in the PAA. This must be a 4-digit hex value.
+1. `--parameters vendorId=<VID>` - The vendor ID to be assigned to the CA. This must be a 4-digit hex value.
 2. `--parameters productIds=<PID1>,<PID2>,...` - The productIds to be assigned to PAIs. Note that the number of PIDs provided should equal the `generatePaiCnt` parameter's value. These must be 4-digit hex values.
 3. `--parameters validityInDays=<n>` - The PAA/PAI certificate's validity in days.
 4. `--parameters dacValidityInDays=<n>` - The validity in days of the DACs that are issued by the Lambda. This value must be less than the PAI's `validityInDays` value.

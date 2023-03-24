@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "acm-pca:ImportCertificateAuthorityCertificate",
+                "acm-pca:IssueCertificate",
+                "acm-pca:CreateCertificateAuthority",
+                "acm-pca:GetCertificate",
+                "acm-pca:GetCertificateAuthorityCsr",
+                "acm-pca:DescribeCertificateAuthority"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

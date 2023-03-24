@@ -5,7 +5,9 @@ This repository contains example SSM Automation Documents that can be used by SS
 ## IAM Roles
 This process will require the creation of IAM Roles to approve the Change Manager Templates and Requests, and execute the automation documents. Before beginning, please make sure that you have all of the roles listed below.
 
-The creation of the roles can be automated by running `./createRoles.sh`. Make sure to set your AWS account ID and the number of approver roles you want to create in the script before running it. 
+The creation of the roles can be automated by running `./createRoles.sh`. Make sure to set up your [AWS credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with the CLI before running the script. You can specify how many request approver roles you want to be created by passing an argument to the script as follows (default is 2 roles):
+
+`./createRoles.sh <NUMBER_OF_ROLES>`
 
 ### CreatePAA and CreatePAI Roles
 These roles will be used to execute the automation documents which create the PAAs and PAIs.

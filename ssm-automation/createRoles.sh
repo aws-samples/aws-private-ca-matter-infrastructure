@@ -1,10 +1,9 @@
 #!/bin/bash
 
-# Replace with your AWS account ID
-AWS_ACCOUNT="1234567890"
+set -euo pipefail
 
-# Replace with the number of approver roles you want to create
-NUMBER_OF_REQUEST_APPROVERS=2
+NUMBER_OF_REQUEST_APPROVERS=${1:-2}
+AWS_ACCOUNT=$(aws sts get-caller-identity | jq -r '.Account')
 
 echo "Creating CreatePAARole..."
 aws iam create-role --role-name CreatePAARole --assume-role-policy-document file://policies/SSMTrustPolicy.json

@@ -6,6 +6,7 @@ node_modules
 gradle/
 .vscode/
 .idea/
+!/lib/index.js
 
 # CDK asset staging directory
 .cdk.staging

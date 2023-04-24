@@ -12,7 +12,11 @@ import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.amazonaws.services.lambda.runtime.events.SQSBatchResponse;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification.S3Entity;
-import com.google.gson.*;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonIOException;
+import com.google.gson.JsonSyntaxException;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.val;
@@ -25,7 +29,11 @@ import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.acmpca.AcmPcaClient;
-import software.amazon.awssdk.services.acmpca.model.*;
+import software.amazon.awssdk.services.acmpca.model.GetCertificateAuthorityCertificateRequest;
+import software.amazon.awssdk.services.acmpca.model.InvalidArgsException;
+import software.amazon.awssdk.services.acmpca.model.InvalidArnException;
+import software.amazon.awssdk.services.acmpca.model.MalformedCsrException;
+import software.amazon.awssdk.services.acmpca.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
@@ -33,15 +41,17 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.utils.Pair;
 
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Period;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -55,7 +65,7 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
 
   private static final String DEFAULT_VALIDITY_IN_DAYS = "1865";
 
-  private final JsonDeserializer<org.joda.time.DateTime> dateTimeDeserializer =
+  private final JsonDeserializer<DateTime> dateTimeDeserializer =
           (json, typeOfT, context) -> DateTime.parse(json.getAsString());
   protected final Gson gson = new GsonBuilder()
           .setPrettyPrinting()
@@ -65,6 +75,7 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
   protected final DefaultCredentialsProvider credentialsProvider = DefaultCredentialsProvider.create();
   protected final AcmPcaClient pcaClient;
   protected final IssueDeviceAttestationCertificate issueDeviceAttestationCertificate;
+  protected final ProcessBuilder procBuilder;
 
   public Handler() {
     s3Client = S3Client.create();
@@ -72,6 +83,9 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
             .credentialsProvider(credentialsProvider)
             .build();
     issueDeviceAttestationCertificate = new IssueDeviceAttestationCertificate(pcaClient);
+    procBuilder = new ProcessBuilder(
+            List.of(System.getProperty("user.dir") + "/chip-cert", "validate-att-cert",
+                    "--paa", "/tmp/paa.pem", "--pai", "/tmp/pai.pem", "--dac", "/tmp/dac.pem"));
   }
 
   private static class S3Structure {
@@ -99,6 +113,57 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
 
     public String genOutputKey(@NonNull final String ext) {
       return pcaArn + '/' + pid + '/' + name + '.' + ext;
+    }
+  }
+
+  @AllArgsConstructor
+  enum AttestationVerificationResult {
+    kSuccess(0),
+    kPaaUntrusted(100),
+    kPaaNotFound(101),
+    kPaaExpired(102),
+    kPaaSignatureInvalid(103),
+    kPaaRevoked(104),
+    kPaaFormatInvalid(105),
+    kPaaArgumentInvalid(106),
+    kPaiExpired(200),
+    kPaiSignatureInvalid(201),
+    kPaiRevoked(202),
+    kPaiFormatInvalid(203),
+    kPaiArgumentInvalid(204),
+    kPaiVendorIdMismatch(205),
+    kPaiAuthorityNotFound(206),
+    kPaiMissing(207),
+    kDacExpired(300),
+    kDacSignatureInvalid(301),
+    kDacRevoked(302),
+    kDacFormatInvalid(303),
+    kDacArgumentInvalid(304),
+    kDacVendorIdMismatch(305),
+    kDacProductIdMismatch(306),
+    kDacAuthorityNotFound(307),
+    kFirmwareInformationMismatch(400),
+    kFirmwareInformationMissing(401),
+    kAttestationSignatureInvalid(500),
+    kAttestationElementsMalformed(501),
+    kAttestationNonceMismatch(502),
+    kAttestationSignatureInvalidFormat(503),
+    kCertificationDeclarationNoKeyId(600),
+    kCertificationDeclarationNoCertificateFound(601),
+    kCertificationDeclarationInvalidSignature(602),
+    kCertificationDeclarationInvalidFormat(603),
+    kCertificationDeclarationInvalidVendorId(604),
+    kCertificationDeclarationInvalidProductId(605),
+    kCertificationDeclarationInvalidPAA(606),
+    kNoMemory(700),
+    kInvalidArgument(800),
+    kInternalError(900),
+    kNotImplemented(0xFFFF);
+
+    private final int value;
+
+    public static String getName(final int code) {
+      return Arrays.stream(AttestationVerificationResult.values()).filter(r -> r.value == code).findFirst().orElse(kNotImplemented).name();
     }
   }
 
@@ -156,6 +221,7 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
     ));
 
     // For each group do the signing.
+    String paaPem, paiPem;
     for (val paiRequests : requests.entrySet()) {
       X500Name paiSubj;
       try {
@@ -166,7 +232,9 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
         val pai = pcaClient.getCertificateAuthorityCertificate(paiRequest);
 
         // Parse the PAI CA certificate.
-        val paiParser = new PEMParser(new StringReader(pai.certificate()));
+        paaPem = pai.certificateChain();
+        paiPem = pai.certificate();
+        val paiParser = new PEMParser(new StringReader(paiPem));
         paiSubj = ((X509CertificateHolder) paiParser.readObject()).getSubject();
       } catch (IOException | AwsServiceException | SdkClientException ex) {
         logger.log("Couldn't obtain information about PAI " + paiRequests.getKey() + ", skipping " +
@@ -204,6 +272,41 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
           continue;
         }
 
+        // Validate using chip-cert tool.
+        try {
+          writeFile(paaPem, "/tmp/paa.pem");
+          writeFile(paiPem, "/tmp/pai.pem");
+          writeFile(certificate, "/tmp/dac.pem");
+
+          val proc = procBuilder.start();
+          val errCode = proc.waitFor();
+          if (errCode != 0) {
+            var output = new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            val regexPatter = Pattern.compile("(\\d+)$");
+            val regexMatcher = regexPatter.matcher(output);
+            if (regexMatcher.find()) {
+              output += ": " + AttestationVerificationResult.getName(Integer.parseInt(regexMatcher.group()));
+            }
+            throw new RuntimeException("chip-cert validation failed with: " + output);
+          }
+        } catch (IOException | RuntimeException | InterruptedException ex) {
+          val errMessage = "Skipping CSR " + bucket + '/' + paiRequests + " due to " + printException(ex);
+          logger.log(errMessage);
+
+          try {
+            final String resultKey = key.genOutputKey("err");
+            storeResult(bucket, resultKey, errMessage, s3Client);
+          } catch (Exception s3Ex) {
+            logger.log("Couldn't create .err file due to " + printException(s3Ex));
+          }
+
+          if (!(ex instanceof IOException) && !(ex instanceof InterruptedException)) {
+            batchItemFailures.add(new SQSBatchResponse.BatchItemFailure(request.messageId));
+          }
+
+          continue;
+        }
+
         // Store the result in S3.
         final String resultKey = key.genOutputKey("pem");
         try {
@@ -223,6 +326,12 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
     }
 
     return new SQSBatchResponse(batchItemFailures);
+  }
+
+  private static void writeFile(@NonNull String data, @NonNull String fileName) throws IOException {
+    val outFile = new FileWriter(fileName);
+    outFile.write(data);
+    outFile.close();
   }
 
   private String storeResult(@NonNull final String bucket,
@@ -275,9 +384,9 @@ public class Handler implements RequestHandler<SQSEvent, SQSBatchResponse>{
     }
 
     try {
-      val validityInDays = Long.valueOf(Optional.ofNullable(System.getenv("dacValidityInDays")).orElse(DEFAULT_VALIDITY_IN_DAYS)).longValue();
+      val validityInDays = Long.parseLong(Optional.ofNullable(System.getenv("dacValidityInDays")).orElse(DEFAULT_VALIDITY_IN_DAYS));
       return issueDeviceAttestationCertificate.run(s3Key.pcaArn, s3Key.pid, paiSubjDic, csr, validityInDays);
-    } catch (ResourceNotFoundException | InvalidArnException | InvalidArgsException | MalformedCsrException | IllegalArgumentException ex | NumberFormatException ex) {
+    } catch (ResourceNotFoundException | InvalidArnException | InvalidArgsException | MalformedCsrException | IllegalArgumentException ex) {
       throw new IllegalArgumentException("Couldn't sign the request in " + bucket + '/' +
               s3Key + ':' + version, ex);
     } catch (Exception ex) {

@@ -150,17 +150,16 @@ export class MatterStack extends Stack {
             }
 
             // Global resources.
-            const rolePrefix = MatterStack.matterPKIRolesPath.substring(1) + prefix;
             this.matterManagePAARole =
-                Role.fromRoleName(this, "MatterManagePAARoleInPAIStack", rolePrefix + MatterStack.MATTER_MANAGE_PAA_ROLE_NAME)
+                Role.fromRoleName(this, "MatterManagePAARoleInPAIStack", MatterStack.MATTER_MANAGE_PAA_ROLE_NAME)
             this.matterIssuePAIRole =
-                Role.fromRoleName(this, "MatterIssuePAIRoleInPAIStack", rolePrefix + MatterStack.MATTER_ISSUE_PAI_ROLE_NAME)
+                Role.fromRoleName(this, "MatterIssuePAIRoleInPAIStack", MatterStack.MATTER_ISSUE_PAI_ROLE_NAME)
             this.matterAuditorRole =
-                Role.fromRoleName(this, "MatterAuditorRoleInPAIStack", rolePrefix + MatterStack.MATTER_AUDITOR_ROLE_NAME)
+                Role.fromRoleName(this, "MatterAuditorRoleInPAIStack", MatterStack.MATTER_AUDITOR_ROLE_NAME)
             this.matterAuditLoggingBackupRole = Role.fromRoleName(this, "MatterAuditLoggingBackupRoleInPAIStack",
-                rolePrefix + MatterStack.MATTER_AUDIT_LOGGING_BACKUP_ROLE_NAME)
+                MatterStack.MATTER_AUDIT_LOGGING_BACKUP_ROLE_NAME)
             this.matterIssueDACRole =
-                Role.fromRoleName(this, "MatterIssueDACRoleInPAIStack", rolePrefix + MatterStack.MATTER_ISSUE_DAC_ROLE)
+                Role.fromRoleName(this, "MatterIssueDACRoleInPAIStack", MatterStack.MATTER_ISSUE_DAC_ROLE)
             this.createDacIssuingLambda(dacValidityInDays);
         }
 

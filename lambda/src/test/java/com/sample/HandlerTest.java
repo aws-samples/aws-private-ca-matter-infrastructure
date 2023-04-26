@@ -14,6 +14,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializer;
+import lombok.SneakyThrows;
 import lombok.val;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -44,8 +46,12 @@ class HandlerTest {
     private final LambdaLogger logger = mock(LambdaLogger.class);
     private final S3Client s3Client = mock(S3Client.class);
     private final AcmPcaClient pcaClient = mock(AcmPcaClient.class);
+    private final Process proc = mock(Process.class);
+    private final InputStream inStream = mock(InputStream.class);
+    private final ProcessBuilder procBuilder = mock(ProcessBuilder.class);
     private final IssueDeviceAttestationCertificate issueDeviceAttestationCertificate = new IssueDeviceAttestationCertificate(pcaClient);
-    private final Handler testHandler = new Handler(s3Client, pcaClient, issueDeviceAttestationCertificate);
+
+    private final Handler testHandler = new Handler(s3Client, pcaClient, issueDeviceAttestationCertificate, procBuilder);
 
     private static final String csr = "-----BEGIN CERTIFICATE REQUEST-----\n" +
             "MIIBKzCB0gIBADAiMSAwHgYDVQQDDBdEQUMgTXZpZDoxMzgxIE1waWQ6MTAwMTBZ\n" +
@@ -58,21 +64,34 @@ class HandlerTest {
             "-----END CERTIFICATE REQUEST-----\n";
 
     private static final String pai = "-----BEGIN CERTIFICATE-----\n" +
-            "MIIBszCCAVmgAwIBAgIRAPNl1rKocY15od9ChqkyblgwCgYIKoZIzj0EAwIwJDEM\n" +
-            "MAoGA1UEAwwDUEFBMRQwEgYKKwYBBAGConwCAQwEMTM4MTAeFw0yMjEyMDIyMTQ0\n" +
-            "MjlaFw0zMjEyMDIyMjQ0MjlaMDoxDDAKBgNVBAMMA1BBSTEUMBIGCisGAQQBgqJ8\n" +
+            "MIIBxDCCAWqgAwIBAgIRAP3UJkzoBle7Rb8si6pWHb0wCgYIKoZIzj0EAwIwJDEM\n" +
+            "MAoGA1UEAwwDUEFBMRQwEgYKKwYBBAGConwCAQwEMTM4MTAeFw0yMzAyMTMxODA3\n" +
+            "NDZaFw0zMzAyMTMxOTA3NDVaMDoxDDAKBgNVBAMMA1BBSTEUMBIGCisGAQQBgqJ8\n" +
             "AgEMBDEzODExFDASBgorBgEEAYKifAICDAQxMDAxMFkwEwYHKoZIzj0CAQYIKoZI\n" +
-            "zj0DAQcDQgAENRCS5U01LIU2r8QVC9b9G65KNoPgvwBVTYDXgc29bDwSjR7SiI6H\n" +
-            "fXiUGefkn2I/8R6zrxg+z2Pd44brzAVuFaNWMFQwEgYDVR0TAQH/BAgwBgEB/wIB\n" +
-            "ADAfBgNVHSMEGDAWgBQyUbS6RTotEidP8L+kuDa4mFjyozAdBgNVHQ4EFgQUs4Hx\n" +
-            "cMCfLwqbBz3GJyVo9c1jCtcwCgYIKoZIzj0EAwIDSAAwRQIhALbwgV3LBeZR6GNC\n" +
-            "ZiQN5D0fPZyqw9e8JWSr+BX5VGAeAiBlTSSMVlTpsa/i3fSLSfW1gws1ooSxRY72\n" +
-            "RLOZ6Yc8YA==\n" +
+            "zj0DAQcDQgAEhQ/UHl6BhVU9BC2ZqQvkOSwEQwsCC9aJf2hpi+7ZXlt4u76DQkQa\n" +
+            "TVu8FXS8ZRtGizhyYvNNW5pjDFMyUqLZWqNnMGUwEgYDVR0TAQH/BAgwBgEB/wIB\n" +
+            "ADAfBgNVHSMEGDAWgBSLgxgLPIqLR2W1o9gMjoqoWo9agDAdBgNVHQ4EFgQUJHSO\n" +
+            "2YNH6xQGS5DR38D0qiesySYwDwYDVR0PAQH/BAUDAwcGADAKBggqhkjOPQQDAgNI\n" +
+            "ADBFAiEAiBCI64C6Y5Rf+CVo5sv+YUOktPQBv3VQtm6OFEF/wQMCIA3CYjqz5y88\n" +
+            "x7eFyooHFb6lT2zPC4XwXESk2sPohQQe\n" +
+            "-----END CERTIFICATE-----";
+
+    private static final String paa = "-----BEGIN CERTIFICATE-----\n" +
+            "MIIBhzCCAS6gAwIBAgIQcTl3LVWoGVzOmFipcgG58jAKBggqhkjOPQQDAjAkMQww\n" +
+            "CgYDVQQDDANQQUExFDASBgorBgEEAYKifAIBDAQxMzgxMB4XDTIzMDEyNDE4NTc1\n" +
+            "MFoXDTM4MDEyNDE5NTc1MFowJDEMMAoGA1UEAwwDUEFBMRQwEgYKKwYBBAGConwC\n" +
+            "AQwEMTM4MTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABDEK72OD7OLzA2iNyHDG\n" +
+            "oslQJ74M+pFnKx/snFILtkkBUIDHGSJAhZIdABE9wznVZ/vZxAY3HqDB6+sOtnYJ\n" +
+            "UfGjQjBAMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFIuDGAs8iotHZbWj2AyO\n" +
+            "iqhaj1qAMA4GA1UdDwEB/wQEAwIBhjAKBggqhkjOPQQDAgNHADBEAiAEocW6RBrU\n" +
+            "hr3UAnIzFaZAu8ibVGANe3qbS+k/YZSTbQIgTU7bQTNKnjR9JUFlSpDmYV6BbC0O\n" +
+            "RYCkrz4nL1cmX80=\n" +
             "-----END CERTIFICATE-----";
 
     private static final GetCertificateAuthorityCertificateResponse getCAResponse =
             GetCertificateAuthorityCertificateResponse.builder()
                     .certificate(pai)
+                    .certificateChain(paa)
                     .build();
 
     private final ResponseInputStream responseStream = mock(ResponseInputStream.class);
@@ -179,8 +198,9 @@ class HandlerTest {
         event.setRecords(List.of(msg1, msg2));
     }
 
+    @SneakyThrows
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() {
         doReturn(logger).when(context).getLogger();
         doReturn(csr.getBytes(StandardCharsets.UTF_8)).when(responseStream).readAllBytes();
         doReturn(responseStream).when(s3Client).getObject(any(GetObjectRequest.class));
@@ -195,6 +215,12 @@ class HandlerTest {
 
         doReturn(getCertResponse).when(pcaClient).getCertificate(any(GetCertificateRequest.class));
         doReturn("PEM").when(getCertResponse).certificate();
+
+        doReturn(proc).when(procBuilder).start();
+        doReturn(0).when(proc).waitFor();
+        doReturn(inStream).when(proc).getInputStream();
+        doReturn(inStream).when(proc).getErrorStream();
+        doReturn(new byte[0]).when(inStream).readAllBytes();
     }
 
     @Test
@@ -239,5 +265,23 @@ class HandlerTest {
         verify(s3Client, times(1)).putObject(
                 argThat((PutObjectRequest req) -> req.key().equals(keyForError)),
                 any(RequestBody.class));
+    }
+
+    @SneakyThrows
+    @Test
+    void handleRequestChipCertFailure() {
+        doReturn(1).when(proc).waitFor();
+        doReturn("invalid 201".getBytes(StandardCharsets.UTF_8)).when(inStream).readAllBytes();
+        assertEquals(1, testHandler.handleRequest(event, context).getBatchItemFailures().size());
+        verify(s3Client, times(1)).putObject(
+                argThat((PutObjectRequest req) -> req.key().equals(keyForError)),
+                argThat((RequestBody body) -> {
+                    try (val input = body.contentStreamProvider().newStream()) {
+                        val content = new String(input.readAllBytes());
+                        return content.contains("invalid") && content.contains("kPaiSignatureInvalid");
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }));
     }
 }

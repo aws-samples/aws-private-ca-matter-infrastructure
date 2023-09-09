@@ -15,9 +15,9 @@ import {
     CustomResourceProvider,
     CustomResourceProviderRuntime,
     Duration,
-    Fn,
+    Fn, ICfnConditionExpression, ICfnRuleConditionExpression,
     Stack,
-    Tags
+    Tags, Token
 } from 'aws-cdk-lib';
 import {Construct, IConstruct} from 'constructs';
 import {
@@ -76,22 +76,43 @@ export class MatterStack extends Stack {
             if (this.node.tryGetContext('generatePaa') === undefined) {
                 paaArn = new CfnParameter(this, "paaArn", {
                     type: "String",
-                    description: "The ARN of the Private Certificate Authority CA that is used as the Matter Product Attestation Authority (PAA)"
+                    description: "The ARN of the Private Certificate Authority CA that is used as the Matter Product Attestation " +
+                                 "Authority (PAA)."
                 }).valueAsString;
             } else {
-                let validityInDays = new CfnParameter(this, "validityInDays", {
+                const validityInDays = new CfnParameter(this, "validityInDays", {
                     type: "Number",
-                    description: "Validity in days for new PAA"
+                    description: "Validity in days for new PAA",
+                    default: 3650
                 }).valueAsNumber;
+                const validityEndDate = new CfnParameter(this, "validityEndDate", {
+                    type: "String",
+                    description: "Validity End Date, is optional and overrides validityInDays. It's in YYYYMMDDHHMMSS format.",
+                    default: ''
+                }).valueAsString;
                 const vendorIdInput = new CfnParameter(this, "vendorId", {
                     type: "String",
-                    description: "If paaArn parameter is not provided, then this vendorId is used to create first PAA. This must be a 4-digit hex value."
+                    description: "The vendorId associated with this PAA. This must be a 4-digit hex value."
                 }).valueAsString;
 
                 const vendorId = this.validateVid(vendorIdInput);
 
-                const commonName = this.node.tryGetContext('paaCommonName') ?? 'PAA';
-                const paaActivation = this.createPAA(commonName, this.node.tryGetContext('paaOrganization'), this.node.tryGetContext('paaOrganizationalUnit'), validityInDays, vendorId);
+                let commonName = new CfnParameter(this, 'paaCommonName', {
+                    type: "String",
+                    description: "The Common Name for this PAA."
+                }).valueAsString;
+                let paaOrganization = new CfnParameter(this, 'paaOrganization', {
+                    type: "String",
+                    description: "The Organization associated with this PAA."
+                }).valueAsString;
+                let paaOrganizationUnit = new CfnParameter(this, 'paaOU', {
+                    type: "String",
+                    description: "The Organizational Unit associated with this PAA.",
+                    default: ''
+                }).valueAsString;
+
+                const validity = this.createPcaValidityInstance(validityInDays, validityEndDate);
+                const paaActivation = this.createPAA(commonName, paaOrganization, paaOrganizationUnit, validity, vendorId);
                 paaArn = paaActivation.certificateAuthorityArn
             }
 
@@ -105,16 +126,23 @@ export class MatterStack extends Stack {
         else {
             // Create PAI
             let prodIdsInput = new CfnParameter(this, "productIds", {
-                type: "List<String>",
-                description: "A list of product IDs to create first PAIs. These must be 4-digit hex values."
-            })?.valueAsList;
+                type: "String",
+                description: "A comma-separated list of product IDs associated with PAIs. These must be 4-digit hex values.",
+                default: ''
+            })?.valueAsString;
             const validityInDays = new CfnParameter(this, "validityInDays", {
                 type: "Number",
-                description: "Validity in days for new PAI(s)"
+                description: "Validity in days for new PAI(s)",
+                default: 3600
             }).valueAsNumber;
+            const validityEndDate = new CfnParameter(this, "validityEndDate", {
+                type: "String",
+                description: "Validity End Date, is optional and overrides validityInDays. It's in YYYYMMDDHHMMSS format.",
+                default: ''
+            }).valueAsString;
             const dacValidityInDays = new CfnParameter(this, "dacValidityInDays", {
                 type: "Number",
-                description: "Validity in days for DACs issued by the Lambda"
+                description: "Validity in days for DACs issued by the Lambda."
             }).valueAsNumber;
             const paaArn = new CfnParameter(this, "paaArn", {
                 type: "String",
@@ -122,31 +150,37 @@ export class MatterStack extends Stack {
             }).valueAsString;
             paaRegion = Arn.split(paaArn, ArnFormat.SLASH_RESOURCE_NAME).region!;
 
-            const prodIds = this.validatePids(prodIdsInput);
+            const prodIdsSet = new CfnCondition(this, 'PidsWereProvided', {
+                expression: Fn.conditionNot(Fn.conditionEquals(prodIdsInput, ''))
+            });
+            const prodIds = this.validatePids(prodIdsInput, prodIdsSet);
 
-            const commonNames = this.node.tryGetContext('paiCommonNames');
-            const organizations = this.node.tryGetContext('paiOrganizations');
-            const organizationalUnits = this.node.tryGetContext('paiOrganizationalUnits');
+            let commonNames = new CfnParameter(this, 'paiCommonNames', {
+                type: "String",
+                description: "The Common Name for this PAI"
+            }).valueAsString;
+            let organizations = new CfnParameter(this, 'paiOrganizations', {
+                type: "String",
+                description: "The Organization associated with this PAI"
+            }).valueAsString;
+            let organizationalUnits = new CfnParameter(this, 'paiOrganizationalUnits', {
+                type: "String",
+                description: "The Organizational Unit associated with this PAI",
+                default: ''
+            }).valueAsString;
 
-            if (commonNames !== undefined && commonNames.split(',').length !== parseInt(genPaiCnt)) {
-                throw Error("The number of CommonNames in paiCommonNames must be equal to generatePaiCnt");
-            }
-
-            if (organizations !== undefined && organizations.split(',').length !== parseInt(genPaiCnt)) {
-                throw Error("The number of Organizations in paiOrganizations must be equal to generatePaiCnt");
-            }
-
-            if (organizationalUnits !== undefined && organizationalUnits.split(',').length !== parseInt(genPaiCnt)) {
-                throw Error("The number of OrganizationalUnits in paiOrganizationalUnits must be equal to generatePaiCnt");
-            }
+            const ouSet = new CfnCondition(this, "paiOUWasProvided", {
+                expression: Fn.conditionNot(Fn.conditionEquals(organizationalUnits, ''))
+            });
 
             const vendorId = this.getPaaVendorId(paaArn, paaRegion);
             const paaPem = this.getCertificatePem(id, paaArn, paaRegion);
+            const validity = this.createPcaValidityStrings(validityInDays, validityEndDate);
             for (let index = 0; index < parseInt(genPaiCnt); index++) {
-                const commonName = commonNames === undefined ? 'PAI' + index : commonNames.split(',')[index];
-                const organization = organizations === undefined ? undefined : organizations.split(',')[index];
-                const organizationalUnit = organizationalUnits === undefined ? undefined : organizationalUnits.split(',')[index];
-                this.createPAI(commonName, organization, organizationalUnit, validityInDays, vendorId, index, prodIds, paaArn, paaRegion, paaPem);
+                const commonName = Fn.select(index, Fn.split(',', commonNames));
+                const organization = Fn.select(index, Fn.split(',', organizations));
+                const organizationalUnit = Fn.conditionIf(ouSet.logicalId, Fn.select(index, Fn.split(',', organizationalUnits)), '');
+                this.createPAI(commonName, organization, organizationalUnit, ouSet, validity, vendorId, index, prodIds, prodIdsSet, paaArn, paaRegion, paaPem);
             }
 
             // Global resources.
@@ -194,7 +228,7 @@ export class MatterStack extends Stack {
     private getPaaVendorId(paaArn: string, paaRegion: string) {
         const provider = CustomResourceProvider.getOrCreateProvider(this, 'Custom::LambdaFunctionUtils', {
             codeDirectory: `${__dirname}`,
-            runtime: CustomResourceProviderRuntime.NODEJS_16_X,
+            runtime: CustomResourceProviderRuntime.NODEJS_18_X,
             description: "Utility Lambda function"
         });
         provider.addToRolePolicy({
@@ -213,10 +247,10 @@ export class MatterStack extends Stack {
         }).getAtt('Result').toString();
     }
 
-    private validatePids(pids: string[]): string[] {
+    private validatePids(pids: string, pidsSet: CfnCondition): string[] {
         const provider = CustomResourceProvider.getOrCreateProvider(this, 'Custom::LambdaFunctionUtils', {
             codeDirectory: `${__dirname}`,
-            runtime: CustomResourceProviderRuntime.NODEJS_16_X,
+            runtime: CustomResourceProviderRuntime.NODEJS_18_X,
             description: "Utility Lambda function"
         });
         const outcome = new CustomResource(this, 'ValidatePid', {
@@ -225,7 +259,7 @@ export class MatterStack extends Stack {
             properties: {
                 "command": "validateVidPid",
                 "vid": undefined,
-                "pids": pids
+                "pids": Fn.conditionIf(pidsSet.logicalId, Fn.split(',', pids), ['AAAA'])
             }
         });
         return outcome.getAtt('pids')!.toStringList();
@@ -234,7 +268,7 @@ export class MatterStack extends Stack {
     private validateVid(vid: string): string {
         const provider = CustomResourceProvider.getOrCreateProvider(this, 'Custom::LambdaFunctionUtils', {
             codeDirectory: `${__dirname}`,
-            runtime: CustomResourceProviderRuntime.NODEJS_16_X,
+            runtime: CustomResourceProviderRuntime.NODEJS_18_X,
             description: "Utility Lambda function"
         });
         const outcome = new CustomResource(this, 'ValidateVid', {
@@ -527,7 +561,12 @@ export class MatterStack extends Stack {
 
         const matterAuditLoggingBucket = new Bucket(this, prefix + `matter-pki-audit-logs`, {
             versioned: true,
-            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+            blockPublicAccess: {
+                blockPublicPolicy: true,
+                restrictPublicBuckets: true,
+                blockPublicAcls: false,
+                ignorePublicAcls: false
+            },
             encryption: BucketEncryption.KMS,
             encryptionKey: bucketKMSKey,
             enforceSSL: true,
@@ -669,40 +708,66 @@ export class MatterStack extends Stack {
         });
     }
 
+    private createPcaValidityInstance(validityInDays: number, validityEndDate: string): ICfnRuleConditionExpression {
+        const useValidityEndDate = new CfnCondition(this, 'ValidityEndDateWasProvided', {
+            expression: Fn.conditionNot(Fn.conditionEquals(validityEndDate, ''))
+        });
+        return Fn.conditionIf(useValidityEndDate.logicalId,
+                              {Type: "END_DATE", Value: validityEndDate},
+                              {Type: "DAYS", Value: validityInDays});
+    }
+
+    private createPcaValidityStrings(validityInDays: number, validityEndDate: string): [ICfnRuleConditionExpression, ICfnRuleConditionExpression] {
+        const useValidityEndDate = new CfnCondition(this, 'ValidityEndDateWasProvided', {
+            expression: Fn.conditionNot(Fn.conditionEquals(validityEndDate, ''))
+        });
+        return [Fn.conditionIf(useValidityEndDate.logicalId, "END_DATE", "DAYS"),
+                Fn.conditionIf(useValidityEndDate.logicalId, validityEndDate, validityInDays)];
+    }
+
     private createPAA(commonName: string,
-                      organization: string | undefined,
-                      organizationalUnit: string | undefined,
-                      validityInDays: number,
+                      organization: string,
+                      organizationalUnit: string,
+                      validity: ICfnRuleConditionExpression,
                       vendorId: string): CfnCertificateAuthorityActivation {
 
         const customAttributes = [
             { // Subject can either have standard attributes or custom attributes but not both.
-                objectIdentifier: "2.5.4.3",                // commonName
-                value: commonName
+                ObjectIdentifier: "2.5.4.3",                // commonName
+                Value: commonName
             },
             {
-                objectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
-                value: vendorId
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
+                Value: vendorId
+            },
+            {
+                ObjectIdentifier: "2.5.4.10",               // organization
+                Value: organization
+            }
+        ];
+Ø
+        const customAttributesWithOU = [
+            { // Subject can either have standard attributes or custom attributes but not both.
+                ObjectIdentifier: "2.5.4.3",                // commonName
+                Value: commonName
+            },
+            {
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
+                Value: vendorId
+            },
+            {
+                ObjectIdentifier: "2.5.4.10",               // organization
+                Value: organization
+            },
+            {
+                ObjectIdentifier: "2.5.4.11",               // organizationalUnit
+                Value: organizationalUnit
             }
         ];
 
-        if (organization !== undefined) {
-            customAttributes.push(
-                {
-                    objectIdentifier: "2.5.4.10",           // organization
-                    value: organization
-                }
-            );
-        }
-
-        if (organizationalUnit !== undefined) {
-            customAttributes.push(
-                {
-                    objectIdentifier: "2.5.4.11",           // organizationalUnit
-                    value: organizationalUnit
-                }
-            );
-        }
+        const useCustomAttrsWithOU = new CfnCondition(this, 'OrgUnitWasProvided', {
+           expression: Fn.conditionNot(Fn.conditionEquals(organizationalUnit, ''))
+        });
 
         const cfnCA = new pca.CfnCertificateAuthority(this, 'CA-PAA', {
             type: 'ROOT',
@@ -710,12 +775,12 @@ export class MatterStack extends Stack {
             signingAlgorithm: 'SHA256WITHECDSA',
             keyStorageSecurityStandard: 'FIPS_140_2_LEVEL_3_OR_HIGHER',
             subject: {
-                customAttributes: customAttributes
+                customAttributes: Fn.conditionIf(useCustomAttrsWithOU.logicalId, customAttributesWithOU, customAttributes)
             },
             tags: [
                 { key: "matterCAType", value: "paa" },
                 { key: MatterStack.matterPKITag, value: ""  }
-            ]
+            ],
         });
 
         // Staying on safe side here.
@@ -726,10 +791,7 @@ export class MatterStack extends Stack {
             certificateAuthorityArn: cfnCA.attrArn,
             certificateSigningRequest: cfnCA.attrCertificateSigningRequest,
             signingAlgorithm: 'SHA256WITHECDSA',
-            validity: {
-                type: "DAYS",
-                value: validityInDays
-            },
+            validity: validity,
             // This template comes with keyCertSign, cRLSign, and digitalSignature Key Usage bits set.
             templateArn: "arn:aws:acm-pca:::template/RootCACertificate_APIPassthrough/V1"
         });
@@ -757,52 +819,105 @@ export class MatterStack extends Stack {
     }
 
     private createPAI(commonName: string,
-                      organization: string | undefined,
-                      organizationalUnit: string | undefined,
-                      validityInDays: number,
+                      organization: string,
+                      organizationalUnit: ICfnConditionExpression,
+                      organizationalUnitSet: CfnCondition,
+                      validity: [ICfnConditionExpression, ICfnConditionExpression],
                       vendorId: string,
                       paiId: number,
                       productIds: string[],
+                      productIdsSet: CfnCondition,
                       parentCAArn: string,
                       parentRegion: string,
                       parentPem: string): CfnCertificateAuthorityActivation {
 
         const id = '-PAI-' + paiId!;
 
-        const pid = Fn.select(paiId, productIds);
+        const pid = Fn.conditionIf(productIdsSet.logicalId, Fn.select(paiId, productIds), '');
 
         const customAttributes = [
             { // Subject can either have standard attributes or custom attributes but not both.
-                objectIdentifier: "2.5.4.3",                // commonName
-                value: commonName
+                ObjectIdentifier: "2.5.4.3",                // commonName
+                Value: commonName
             },
             {
-                objectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
-                value: vendorId
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
+                Value: vendorId
             },
             {
-                objectIdentifier: "1.3.6.1.4.1.37244.2.2",  // ProductID, matter-oid-pid
-                value: pid
+                ObjectIdentifier: "2.5.4.10",            // organization
+                Value: organization
             }
         ];
 
-        if (organization !== undefined) {
-            customAttributes.push(
-                {
-                    objectIdentifier: "2.5.4.10",            // organization
-                    value: organization
-                }
-            );
-        }
+        const customAttributesWithPid = [
+            { // Subject can either have standard attributes or custom attributes but not both.
+                ObjectIdentifier: "2.5.4.3",                // commonName
+                Value: commonName
+            },
+            {
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
+                Value: vendorId
+            },
+            {
+                ObjectIdentifier: "2.5.4.10",            // organization
+                Value: organization
+            },
+            {
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.2",  // ProductID, matter-oid-pid
+                Value: pid
+            }
+        ];
 
-        if (organizationalUnit !== undefined) {
-            customAttributes.push(
-                {
-                    objectIdentifier: "2.5.4.11",            // organizationalUnit
-                    value: organizationalUnit
-                }
-            );
-        }
+        const customAttributesWithOu = [
+            { // Subject can either have standard attributes or custom attributes but not both.
+                ObjectIdentifier: "2.5.4.3",                // commonName
+                Value: commonName
+            },
+            {
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
+                Value: vendorId
+            },
+            {
+                ObjectIdentifier: "2.5.4.10",            // organization
+                Value: organization
+            },
+            {
+                ObjectIdentifier: "2.5.4.11",            // organizationalUnit
+                Value: organizationalUnit
+            }
+        ];
+
+        const customAttributesWithOuPid = [
+            { // Subject can either have standard attributes or custom attributes but not both.
+                ObjectIdentifier: "2.5.4.3",                // commonName
+                Value: commonName
+            },
+            {
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.1",  // VendorID, matter-oid-vid
+                Value: vendorId
+            },
+            {
+                ObjectIdentifier: "2.5.4.10",            // organization
+                Value: organization
+            },
+            {
+                ObjectIdentifier: "2.5.4.11",            // organizationalUnit
+                Value: organizationalUnit
+            },
+            {
+                ObjectIdentifier: "1.3.6.1.4.1.37244.2.2",  // ProductID, matter-oid-pid
+                Value: pid
+            }
+        ];
+
+        const pidAndOuSet = new CfnCondition(this, `PaiPidAndOuWereProvided-${paiId}`, {
+            expression: Fn.conditionAnd(productIdsSet, organizationalUnitSet)
+        });
+        const targetCustomAttributes =
+            Fn.conditionIf(pidAndOuSet.logicalId, customAttributesWithOuPid,
+                Fn.conditionIf(productIdsSet.logicalId, customAttributesWithPid,
+                    Fn.conditionIf(organizationalUnitSet.logicalId, customAttributesWithOu, customAttributes)));
 
         const cfnCA = new pca.CfnCertificateAuthority(this, 'CA' + id, {
             type: 'SUBORDINATE',
@@ -810,7 +925,7 @@ export class MatterStack extends Stack {
             signingAlgorithm: 'SHA256WITHECDSA',
             keyStorageSecurityStandard: 'FIPS_140_2_LEVEL_3_OR_HIGHER',
             subject: {
-                customAttributes: customAttributes
+                customAttributes: targetCustomAttributes
             },
             tags: [
                 { key: MatterStack.matterCATypeTag, value: "pai" },
@@ -847,8 +962,8 @@ export class MatterStack extends Stack {
                     Csr: caCertCsrParam.stringValue,
                     SigningAlgorithm: 'SHA256WITHECDSA',
                     Validity: {
-                        Type: 'DAYS',
-                        Value: validityInDays,
+                        Type: validity[0],
+                        Value: Token.asNumber(validity[1])
                     },
                     TemplateArn: "arn:aws:acm-pca:::template/BlankSubordinateCACertificate_PathLen0_APIPassthrough/V1",
                     // Currently the only way to only set keyCertSign and cRLSign bits (and not digitalSignature) and get Matter-compatible certificate.

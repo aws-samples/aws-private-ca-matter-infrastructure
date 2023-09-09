@@ -6,7 +6,7 @@ To deploy these stacks, run the following commands from within this directory:
 
 ## Create Deployment Bucket
 ```
-aws s3api create-bucket --bucket <AWS_ACCOUNT_ID>-matter-cfn-deployment-assets
+aws s3api create-bucket --bucket <AWS_ACCOUNT_ID>-matter-cfn-deployment-assets --create-bucket-configuration LocationConstraint=<REGION>
 ```
 Note: Make sure you have write access to the created bucket before proceeding.
 

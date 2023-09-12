@@ -42,7 +42,7 @@ When deploying the application, you can configure it to support different use ca
 
    To generate a new PAA for use with Matter, use the following options:
     ```
-    cdk deploy --context generatePaa=1 --parameters vendorId=<VENDOR_ID> --parameters validityInDays=<PAA_VALIDITY>
+    cdk deploy --context generatePaa=1 --parameters vendorId=<VENDOR_ID> --parameters {validityInDays=<PAA_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters vendorId=<MatterVendorId as 4-digit hex code> --parameters paaCommonName=<CN> --parameters paaOrganization=<O> [--parameters paaOU=<OU>]
     ```
 
    **Note:**
@@ -56,7 +56,7 @@ When deploying the application, you can configure it to support different use ca
 3. To generate PAIs in the same AWS Region as the PAA
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
    ```
 4. To generate PAIs in a different AWS Region from the PAA
 
@@ -64,7 +64,7 @@ When deploying the application, you can configure it to support different use ca
    (see [AWS Cloud Development Kit documentation](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-environment)):
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters validityInDays=<PAI_VALIDITY> --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
    ```
 5. To add more PAIs to the existing infrastructure
 
@@ -99,20 +99,21 @@ When deploying the application, you can configure it to support different use ca
 1. `--parameters vendorId=<VID>` - The vendor ID to be assigned to the CA. This must be a 4-digit hex value.
 2. `--parameters productIds=<PID1>,<PID2>,...` - The productIds to be assigned to PAIs. Note that the number of PIDs provided should equal the `generatePaiCnt` parameter's value. These must be 4-digit hex values.
 3. `--parameters validityInDays=<n>` - The PAA/PAI certificate's validity in days.
-4. `--parameters dacValidityInDays=<n>` - The validity in days of the DACs that are issued by the Lambda. This value must be less than the PAI's `validityInDays` value.
-5. `--parameters paaArn=<PAA_ARN>` - The ARN of a PAA, used either to set up Matter PKI infrastructure around it, or to generate a new PAI.
+4. `--parameters validityEndDate=YYYYMMDDHHMMSS` - The PAA/PAI certificate's validity end date. This option always overrides the `validityInDays` counterpart.
+5. `--parameters dacValidityInDays=<n>` - The validity in days of the DACs that are issued by the Lambda. This value must be less than the PAI's `validityInDays` value.
+6. `--parameters paaArn=<PAA_ARN>` - The ARN of a PAA, used either to set up Matter PKI infrastructure around it, or to generate a new PAI.
+7. `--parameters paaCommonName=<CN>` - CommonName (CN) is included in the Subject of the PAA.
+8. `--parameters paaOrganization=<O>` - Organization (O) is included in the Subject of the PAA.
+9. `--parameters paaOrganizationalUnit=<OU>` - If set, this OrganizationUnit (OU) is included in the Subject of the PAA.
+10. `--parameters paiCommonNames=<CN1>,<CN2>,...` - CommonNames (CN) are included in the Subjects of the PAIs. Note that the number of CommonNames provided should equal the `generatePaiCnt` parameter's value.
+11. `--parameters paiOrganizations=<O1>,<02>,...` - Organizations (O) are included in the Subjects of the PAIs. Note that the number of Organizations provided should equal the `generatePaiCnt` parameter's value.
+12. `--parameters paiOrganizationalUnits=<OU1>,<0U2>,...` - If set, these OrganizationalUnits (OU) are included in the Subjects of the PAIs. Note that the number of OrganizationalUnits provided should equal the `generatePaiCnt` parameter's value.
 
 ### Context options
 1. `--context generatePaiCnt=<NUM>` - If set, `<NUM>` new PAIs derived from PAA are created.
 2. `--context generatePaa=1` - If set, a new PAA is generated, otherwise an existing PAA is expected (see `paaArn` parameter). This
    option is only used when `generatePaiCnt` isn't set.
 3. `--context stackNamePrefix=<PREFIX>` - Optionally allows several PKI infrastructures to co-exist under different names.
-4. `--context paaOrganization=<O>` - If set, this Organization (O) is included in the Subject of the PAA.
-5. `--context paaOrganizationalUnit=<OU>` - If set, this OrganizationUnit (OU) is included in the Subject of the PAA.
-6. `--context paaCommonName=<CN>` - If set, this CommonName (CN) is included in the Subject of the PAA.
-7. `--context paiOrganizations=<O1>,<02>,...` - If set, these Organizations (O) are included in the Subjects of the PAIs. Note that the number of Organizations provided should equal the `generatePaiCnt` parameter's value.
-8. `--context paiOrganizationalUnits=<OU1>,<0U2>,...` - If set, these OrganizationalUnits (OU) are included in the Subjects of the PAIs. Note that the number of OrganizationalUnits provided should equal the `generatePaiCnt` parameter's value.
-9. `--context paiCommonNames=<CN1>,<CN2>,...` - If set, these CommonNames (CN) are included in the Subjects of the PAIs. Note that the number of CommonNames provided should equal the `generatePaiCnt` parameter's value.
 
 ### Hard-Coded Values
 The following list contains some of the values that are hard-coded into the infrastructure. They can all be changed by modifying the CDK code or the CFN template directly.

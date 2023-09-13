@@ -21,7 +21,7 @@ From the example’s root folder, run the following commands:
 ```bash
 npm install -g aws-cdk
 npm install
-gradle build
+./gradlew build
 npm run build
 ```
 

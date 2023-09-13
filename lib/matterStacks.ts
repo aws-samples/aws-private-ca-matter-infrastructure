@@ -745,7 +745,7 @@ export class MatterStack extends Stack {
                 Value: organization
             }
         ];
-Ø
+
         const customAttributesWithOU = [
             { // Subject can either have standard attributes or custom attributes but not both.
                 ObjectIdentifier: "2.5.4.3",                // commonName

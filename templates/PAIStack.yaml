@@ -1,29 +1,140 @@
 Parameters:
-  productId:
+  productIds:
     Type: String
-    Description: The product ID associated with this PAI
-  vendorId:
-    Type: String
-    Description: The vendorId associated with this PAI
+    Default: ""
+    Description: A comma-separated list of product IDs associated with PAIs. These must be 4-digit hex values.
   validityInDays:
     Type: Number
-    Description: Validity in days for this PAI
+    Default: 3600
+    Description: Validity in days for new PAI(s)
+  validityEndDate:
+    Type: String
+    Default: ""
+    Description: Validity End Date, is optional and overrides validityInDays. It's in YYYYMMDDHHMMSS format.
   dacValidityInDays:
     Type: Number
     Description: Validity in days for DACs issued by the Lambda.
   paaArn:
     Type: String
-    Description: The ARN of the PAA that is used to sign the PAI certificate
-  paiCommonName:
+    Description: ARN of the PAA
+  paiCommonNames:
     Type: String
     Description: The Common Name for this PAI
-  paiOrganization:
+  paiOrganizations:
     Type: String
     Description: The Organization associated with this PAI
-  paiOU:
+  paiOrganizationalUnits:
     Type: String
+    Default: ""
     Description: The Organizational Unit associated with this PAI
+Conditions:
+  PidsWereProvided:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: productIds
+          - ""
+  paiOUWasProvided:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: paiOrganizationalUnits
+          - ""
+  ValidityEndDateWasProvided:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: validityEndDate
+          - ""
+  PaiPidAndOuWereProvided0:
+    Fn::And:
+      - Condition: PidsWereProvided
+      - Condition: paiOUWasProvided
+  PaiPidAndOuWereProvided1:
+    Fn::And:
+      - Condition: PidsWereProvided
+      - Condition: paiOUWasProvided
+  isMultiRegion:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: AWS::Region
+          - Fn::Select:
+              - 3
+              - Fn::Split:
+                  - ":"
+                  - Ref: paaArn
 Resources:
+  CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: Inline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: acm-pca:DescribeCertificateAuthority
+                Resource:
+                  Ref: paaArn
+  CustomLambdaFunctionUtilsCustomResourceProviderHandler6BCB6537:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: ${AWS::AccountId}-matter-cfn-deployment-assets
+        S3Key: LambdaFunctionUtils.zip
+      Timeout: 900
+      MemorySize: 128
+      Handler: __entrypoint__.handler
+      Role:
+        Fn::GetAtt:
+          - CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507
+          - Arn
+      Runtime: nodejs18.x
+      Description: Utility Lambda function
+    DependsOn:
+      - CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507
+  ValidatePid:
+    Type: Custom::ValidatePidType
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomLambdaFunctionUtilsCustomResourceProviderHandler6BCB6537
+          - Arn
+      command: validateVidPid
+      pids:
+        Fn::If:
+          - PidsWereProvided
+          - Fn::Split:
+              - ","
+              - Ref: productIds
+          - - AAAA
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  ObtainPaaVid:
+    Type: Custom::GetPaaVendorIdType
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomLambdaFunctionUtilsCustomResourceProviderHandler6BCB6537
+          - Arn
+      command: getPaaVendorId
+      paaArn:
+        Ref: paaArn
+      paaRegion:
+        Fn::Select:
+          - 3
+          - Fn::Split:
+              - ":"
+              - Ref: paaArn
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
   PaaPemMatterStackPAI9E94FD8B:
     Type: Custom::AWS
     Properties:
@@ -42,7 +153,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1677602540631"}}'
+            - '","physicalResourceId":{"id":"1694239452458"}}'
       Update:
         Fn::Join:
           - ""
@@ -54,14 +165,12 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1677602540631"}}'
+            - '","physicalResourceId":{"id":"1694239452458"}}'
       InstallLatestAwsSdk: false
     DependsOn:
       - PaaPemMatterStackPAICustomResourcePolicy93FEF6DD
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
-    Metadata:
-      aws:cdk:path: MatterStackPAI/PaaPemMatterStackPAI/Resource/Default
   PaaPemMatterStackPAICustomResourcePolicy93FEF6DD:
     Type: AWS::IAM::Policy
     Properties:
@@ -75,8 +184,6 @@ Resources:
       PolicyName: PaaPemMatterStackPAICustomResourcePolicy93FEF6DD
       Roles:
         - Ref: AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
-    Metadata:
-      aws:cdk:path: MatterStackPAI/PaaPemMatterStackPAI/CustomResourcePolicy/Resource
   AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2:
     Type: AWS::IAM::Role
     Properties:
@@ -93,8 +200,6 @@ Resources:
             - - "arn:"
               - Ref: AWS::Partition
               - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-    Metadata:
-      aws:cdk:path: MatterStackPAI/AWS679f53fac002430cb0da5b7982bd2287/ServiceRole/Resource
   AWS679f53fac002430cb0da5b7982bd22872D164C4C:
     Type: AWS::Lambda::Function
     Properties:
@@ -107,12 +212,10 @@ Resources:
           - AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
           - Arn
       Handler: index.handler
-      Runtime: nodejs14.x
+      Runtime: nodejs16.x
       Timeout: 120
     DependsOn:
       - AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
-    Metadata:
-      aws:cdk:path: MatterStackPAI/AWS679f53fac002430cb0da5b7982bd2287/Resource
   CAPAI0:
     Type: AWS::ACMPCA::CertificateAuthority
     Properties:
@@ -120,21 +223,128 @@ Resources:
       SigningAlgorithm: SHA256WITHECDSA
       Subject:
         CustomAttributes:
-          - ObjectIdentifier: 2.5.4.3
-            Value:
-              Ref: paiCommonName
-          - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
-            Value:
-              Ref: vendorId
-          - ObjectIdentifier: 1.3.6.1.4.1.37244.2.2
-            Value:
-              Ref: productId
-          - ObjectIdentifier: 2.5.4.10
-            Value:
-              Ref: paiOrganization
-          - ObjectIdentifier: 2.5.4.11
-            Value:
-              Ref: paiOU
+          Fn::If:
+            - PaiPidAndOuWereProvided0
+            - - ObjectIdentifier: 2.5.4.3
+                Value:
+                  Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - ","
+                        - Ref: paiCommonNames
+              - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                Value:
+                  Fn::GetAtt:
+                    - ObtainPaaVid
+                    - Result
+              - ObjectIdentifier: 2.5.4.10
+                Value:
+                  Fn::Select:
+                    - 0
+                    - Fn::Split:
+                        - ","
+                        - Ref: paiOrganizations
+              - ObjectIdentifier: 2.5.4.11
+                Value:
+                  Fn::If:
+                    - paiOUWasProvided
+                    - Fn::Select:
+                        - 0
+                        - Fn::Split:
+                            - ","
+                            - Ref: paiOrganizationalUnits
+                    - ""
+              - ObjectIdentifier: 1.3.6.1.4.1.37244.2.2
+                Value:
+                  Fn::If:
+                    - PidsWereProvided
+                    - Fn::Select:
+                        - 0
+                        - Fn::GetAtt:
+                            - ValidatePid
+                            - pids
+                    - ""
+            - Fn::If:
+                - PidsWereProvided
+                - - ObjectIdentifier: 2.5.4.3
+                    Value:
+                      Fn::Select:
+                        - 0
+                        - Fn::Split:
+                            - ","
+                            - Ref: paiCommonNames
+                  - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                    Value:
+                      Fn::GetAtt:
+                        - ObtainPaaVid
+                        - Result
+                  - ObjectIdentifier: 2.5.4.10
+                    Value:
+                      Fn::Select:
+                        - 0
+                        - Fn::Split:
+                            - ","
+                            - Ref: paiOrganizations
+                  - ObjectIdentifier: 1.3.6.1.4.1.37244.2.2
+                    Value:
+                      Fn::If:
+                        - PidsWereProvided
+                        - Fn::Select:
+                            - 0
+                            - Fn::GetAtt:
+                                - ValidatePid
+                                - pids
+                        - ""
+                - Fn::If:
+                    - paiOUWasProvided
+                    - - ObjectIdentifier: 2.5.4.3
+                        Value:
+                          Fn::Select:
+                            - 0
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiCommonNames
+                      - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                        Value:
+                          Fn::GetAtt:
+                            - ObtainPaaVid
+                            - Result
+                      - ObjectIdentifier: 2.5.4.10
+                        Value:
+                          Fn::Select:
+                            - 0
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiOrganizations
+                      - ObjectIdentifier: 2.5.4.11
+                        Value:
+                          Fn::If:
+                            - paiOUWasProvided
+                            - Fn::Select:
+                                - 0
+                                - Fn::Split:
+                                    - ","
+                                    - Ref: paiOrganizationalUnits
+                            - ""
+                    - - ObjectIdentifier: 2.5.4.3
+                        Value:
+                          Fn::Select:
+                            - 0
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiCommonNames
+                      - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                        Value:
+                          Fn::GetAtt:
+                            - ObtainPaaVid
+                            - Result
+                      - ObjectIdentifier: 2.5.4.10
+                        Value:
+                          Fn::Select:
+                            - 0
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiOrganizations
       Type: SUBORDINATE
       KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
       Tags:
@@ -144,8 +354,6 @@ Resources:
           Value: ""
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/CA-PAI-0
   MatterStackPAIPAICSR017E82ECC:
     Type: AWS::SSM::Parameter
     Properties:
@@ -159,8 +367,6 @@ Resources:
                   - CAPAI0
                   - CertificateSigningRequest
       Name: /MatterStackPAI/PAI-CSR0
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterStackPAI-PAI-CSR-0/Resource
   CertificatePAI03F296F37:
     Type: Custom::AWS
     Properties:
@@ -177,15 +383,23 @@ Resources:
             - Fn::GetAtt:
                 - MatterStackPAIPAICSR017E82ECC
                 - Value
-            - '","SigningAlgorithm":"SHA256WITHECDSA","Validity":{"Type":"DAYS","Value":'
-            - Ref: validityInDays
+            - '","SigningAlgorithm":"SHA256WITHECDSA","Validity":{"Type":"'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - END_DATE
+                - DAYS
+            - '","Value":'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - Ref: validityEndDate
+                - Ref: validityInDays
             - '},"TemplateArn":"arn:aws:acm-pca:::template/BlankSubordinateCACertificate_PathLen0_APIPassthrough/V1","ApiPassthrough":{"Extensions":{"CustomExtensions":[{"ObjectIdentifier":"2.5.29.15","Value":"AwIBBg==","Critical":true}]}}},"region":"'
             - Fn::Select:
                 - 3
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1677602540653"}}'
+            - '","physicalResourceId":{"id":"1694239452467"}}'
       Update:
         Fn::Join:
           - ""
@@ -195,22 +409,28 @@ Resources:
             - Fn::GetAtt:
                 - MatterStackPAIPAICSR017E82ECC
                 - Value
-            - '","SigningAlgorithm":"SHA256WITHECDSA","Validity":{"Type":"DAYS","Value":'
-            - Ref: validityInDays
+            - '","SigningAlgorithm":"SHA256WITHECDSA","Validity":{"Type":"'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - END_DATE
+                - DAYS
+            - '","Value":'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - Ref: validityEndDate
+                - Ref: validityInDays
             - '},"TemplateArn":"arn:aws:acm-pca:::template/BlankSubordinateCACertificate_PathLen0_APIPassthrough/V1","ApiPassthrough":{"Extensions":{"CustomExtensions":[{"ObjectIdentifier":"2.5.29.15","Value":"AwIBBg==","Critical":true}]}}},"region":"'
             - Fn::Select:
                 - 3
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1677602540653"}}'
+            - '","physicalResourceId":{"id":"1694239452467"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePAI0CustomResourcePolicy48E777E4
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
-    Metadata:
-      aws:cdk:path: MatterStackPAI/Certificate-PAI-0/Resource/Default
   CertificatePAI0CustomResourcePolicy48E777E4:
     Type: AWS::IAM::Policy
     Properties:
@@ -224,8 +444,6 @@ Resources:
       PolicyName: CertificatePAI0CustomResourcePolicy48E777E4
       Roles:
         - Ref: AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
-    Metadata:
-      aws:cdk:path: MatterStackPAI/Certificate-PAI-0/CustomResourcePolicy/Resource
   CertificatePemPAI0AC317715:
     Type: Custom::AWS
     Properties:
@@ -248,7 +466,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1677602540654"}}'
+            - '","physicalResourceId":{"id":"1694239452467"}}'
       Update:
         Fn::Join:
           - ""
@@ -264,14 +482,12 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1677602540654"}}'
+            - '","physicalResourceId":{"id":"1694239452467"}}'
       InstallLatestAwsSdk: false
     DependsOn:
       - CertificatePemPAI0CustomResourcePolicyBA6B7480
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
-    Metadata:
-      aws:cdk:path: MatterStackPAI/CertificatePem-PAI-0/Resource/Default
   CertificatePemPAI0CustomResourcePolicyBA6B7480:
     Type: AWS::IAM::Policy
     Properties:
@@ -285,8 +501,6 @@ Resources:
       PolicyName: CertificatePemPAI0CustomResourcePolicyBA6B7480
       Roles:
         - Ref: AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
-    Metadata:
-      aws:cdk:path: MatterStackPAI/CertificatePem-PAI-0/CustomResourcePolicy/Resource
   CertActivationPAI0:
     Type: AWS::ACMPCA::CertificateAuthorityActivation
     Properties:
@@ -303,8 +517,307 @@ Resources:
           - PaaPemMatterStackPAI9E94FD8B
           - Certificate
       Status: ACTIVE
-    Metadata:
-      aws:cdk:path: MatterStackPAI/CertActivation-PAI-0
+  CAPAI1:
+    Type: AWS::ACMPCA::CertificateAuthority
+    Properties:
+      KeyAlgorithm: EC_prime256v1
+      SigningAlgorithm: SHA256WITHECDSA
+      Subject:
+        CustomAttributes:
+          Fn::If:
+            - PaiPidAndOuWereProvided1
+            - - ObjectIdentifier: 2.5.4.3
+                Value:
+                  Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - ","
+                        - Ref: paiCommonNames
+              - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                Value:
+                  Fn::GetAtt:
+                    - ObtainPaaVid
+                    - Result
+              - ObjectIdentifier: 2.5.4.10
+                Value:
+                  Fn::Select:
+                    - 1
+                    - Fn::Split:
+                        - ","
+                        - Ref: paiOrganizations
+              - ObjectIdentifier: 2.5.4.11
+                Value:
+                  Fn::If:
+                    - paiOUWasProvided
+                    - Fn::Select:
+                        - 1
+                        - Fn::Split:
+                            - ","
+                            - Ref: paiOrganizationalUnits
+                    - ""
+              - ObjectIdentifier: 1.3.6.1.4.1.37244.2.2
+                Value:
+                  Fn::If:
+                    - PidsWereProvided
+                    - Fn::Select:
+                        - 1
+                        - Fn::GetAtt:
+                            - ValidatePid
+                            - pids
+                    - ""
+            - Fn::If:
+                - PidsWereProvided
+                - - ObjectIdentifier: 2.5.4.3
+                    Value:
+                      Fn::Select:
+                        - 1
+                        - Fn::Split:
+                            - ","
+                            - Ref: paiCommonNames
+                  - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                    Value:
+                      Fn::GetAtt:
+                        - ObtainPaaVid
+                        - Result
+                  - ObjectIdentifier: 2.5.4.10
+                    Value:
+                      Fn::Select:
+                        - 1
+                        - Fn::Split:
+                            - ","
+                            - Ref: paiOrganizations
+                  - ObjectIdentifier: 1.3.6.1.4.1.37244.2.2
+                    Value:
+                      Fn::If:
+                        - PidsWereProvided
+                        - Fn::Select:
+                            - 1
+                            - Fn::GetAtt:
+                                - ValidatePid
+                                - pids
+                        - ""
+                - Fn::If:
+                    - paiOUWasProvided
+                    - - ObjectIdentifier: 2.5.4.3
+                        Value:
+                          Fn::Select:
+                            - 1
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiCommonNames
+                      - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                        Value:
+                          Fn::GetAtt:
+                            - ObtainPaaVid
+                            - Result
+                      - ObjectIdentifier: 2.5.4.10
+                        Value:
+                          Fn::Select:
+                            - 1
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiOrganizations
+                      - ObjectIdentifier: 2.5.4.11
+                        Value:
+                          Fn::If:
+                            - paiOUWasProvided
+                            - Fn::Select:
+                                - 1
+                                - Fn::Split:
+                                    - ","
+                                    - Ref: paiOrganizationalUnits
+                            - ""
+                    - - ObjectIdentifier: 2.5.4.3
+                        Value:
+                          Fn::Select:
+                            - 1
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiCommonNames
+                      - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                        Value:
+                          Fn::GetAtt:
+                            - ObtainPaaVid
+                            - Result
+                      - ObjectIdentifier: 2.5.4.10
+                        Value:
+                          Fn::Select:
+                            - 1
+                            - Fn::Split:
+                                - ","
+                                - Ref: paiOrganizations
+      Type: SUBORDINATE
+      KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
+      Tags:
+        - Key: matterCAType
+          Value: pai
+        - Key: matterPKITag
+          Value: ""
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+  MatterStackPAIPAICSR1B2BD3BFA:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value:
+        Fn::Join:
+          - \n
+          - Fn::Split:
+              - "\n"
+              - Fn::GetAtt:
+                  - CAPAI1
+                  - CertificateSigningRequest
+      Name: /MatterStackPAI/PAI-CSR1
+  CertificatePAI1C5AB2E2B:
+    Type: Custom::AWS
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - AWS679f53fac002430cb0da5b7982bd22872D164C4C
+          - Arn
+      Create:
+        Fn::Join:
+          - ""
+          - - '{"service":"ACMPCA","action":"issueCertificate","parameters":{"CertificateAuthorityArn":"'
+            - Ref: paaArn
+            - '","Csr":"'
+            - Fn::GetAtt:
+                - MatterStackPAIPAICSR1B2BD3BFA
+                - Value
+            - '","SigningAlgorithm":"SHA256WITHECDSA","Validity":{"Type":"'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - END_DATE
+                - DAYS
+            - '","Value":'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - Ref: validityEndDate
+                - Ref: validityInDays
+            - '},"TemplateArn":"arn:aws:acm-pca:::template/BlankSubordinateCACertificate_PathLen0_APIPassthrough/V1","ApiPassthrough":{"Extensions":{"CustomExtensions":[{"ObjectIdentifier":"2.5.29.15","Value":"AwIBBg==","Critical":true}]}}},"region":"'
+            - Fn::Select:
+                - 3
+                - Fn::Split:
+                    - ":"
+                    - Ref: paaArn
+            - '","physicalResourceId":{"id":"1694239452468"}}'
+      Update:
+        Fn::Join:
+          - ""
+          - - '{"service":"ACMPCA","action":"issueCertificate","parameters":{"CertificateAuthorityArn":"'
+            - Ref: paaArn
+            - '","Csr":"'
+            - Fn::GetAtt:
+                - MatterStackPAIPAICSR1B2BD3BFA
+                - Value
+            - '","SigningAlgorithm":"SHA256WITHECDSA","Validity":{"Type":"'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - END_DATE
+                - DAYS
+            - '","Value":'
+            - Fn::If:
+                - ValidityEndDateWasProvided
+                - Ref: validityEndDate
+                - Ref: validityInDays
+            - '},"TemplateArn":"arn:aws:acm-pca:::template/BlankSubordinateCACertificate_PathLen0_APIPassthrough/V1","ApiPassthrough":{"Extensions":{"CustomExtensions":[{"ObjectIdentifier":"2.5.29.15","Value":"AwIBBg==","Critical":true}]}}},"region":"'
+            - Fn::Select:
+                - 3
+                - Fn::Split:
+                    - ":"
+                    - Ref: paaArn
+            - '","physicalResourceId":{"id":"1694239452468"}}'
+      InstallLatestAwsSdk: true
+    DependsOn:
+      - CertificatePAI1CustomResourcePolicy13F95E73
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  CertificatePAI1CustomResourcePolicy13F95E73:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: acm-pca:IssueCertificate
+            Effect: Allow
+            Resource:
+              Ref: paaArn
+        Version: "2012-10-17"
+      PolicyName: CertificatePAI1CustomResourcePolicy13F95E73
+      Roles:
+        - Ref: AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
+  CertificatePemPAI198ABA79A:
+    Type: Custom::AWS
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - AWS679f53fac002430cb0da5b7982bd22872D164C4C
+          - Arn
+      Create:
+        Fn::Join:
+          - ""
+          - - '{"service":"ACMPCA","action":"getCertificate","parameters":{"CertificateArn":"'
+            - Fn::GetAtt:
+                - CertificatePAI1C5AB2E2B
+                - CertificateArn
+            - '","CertificateAuthorityArn":"'
+            - Ref: paaArn
+            - '"},"region":"'
+            - Fn::Select:
+                - 3
+                - Fn::Split:
+                    - ":"
+                    - Ref: paaArn
+            - '","physicalResourceId":{"id":"1694239452468"}}'
+      Update:
+        Fn::Join:
+          - ""
+          - - '{"service":"ACMPCA","action":"getCertificate","parameters":{"CertificateArn":"'
+            - Fn::GetAtt:
+                - CertificatePAI1C5AB2E2B
+                - CertificateArn
+            - '","CertificateAuthorityArn":"'
+            - Ref: paaArn
+            - '"},"region":"'
+            - Fn::Select:
+                - 3
+                - Fn::Split:
+                    - ":"
+                    - Ref: paaArn
+            - '","physicalResourceId":{"id":"1694239452468"}}'
+      InstallLatestAwsSdk: false
+    DependsOn:
+      - CertificatePemPAI1CustomResourcePolicy83BE6455
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  CertificatePemPAI1CustomResourcePolicy83BE6455:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: acm-pca:GetCertificate
+            Effect: Allow
+            Resource:
+              Ref: paaArn
+        Version: "2012-10-17"
+      PolicyName: CertificatePemPAI1CustomResourcePolicy83BE6455
+      Roles:
+        - Ref: AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
+  CertActivationPAI1:
+    Type: AWS::ACMPCA::CertificateAuthorityActivation
+    Properties:
+      Certificate:
+        Fn::GetAtt:
+          - CertificatePemPAI198ABA79A
+          - Certificate
+      CertificateAuthorityArn:
+        Fn::GetAtt:
+          - CAPAI1
+          - Arn
+      CertificateChain:
+        Fn::GetAtt:
+          - PaaPemMatterStackPAI9E94FD8B
+          - Certificate
+      Status: ACTIVE
   MatterAuditorRoleInPAIStackPolicyCE7DAB06:
     Type: AWS::IAM::Policy
     Properties:
@@ -355,13 +868,10 @@ Resources:
       PolicyName: MatterAuditorRoleInPAIStackPolicyCE7DAB06
       Roles:
         - MatterAuditorRole
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditorRoleInPAIStack/Policy/Resource
     Condition: isMultiRegion
   DacInputS3ToSQSS3LoggingBucket92EDF008:
     Type: AWS::S3::Bucket
     Properties:
-      AccessControl: LogDeliveryWrite
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -378,12 +888,6 @@ Resources:
         Status: Enabled
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/S3LoggingBucket/Resource
-      cfn_nag:
-        rules_to_suppress:
-          - id: W35
-            reason: This S3 bucket is used as the access logging bucket for another bucket
   DacInputS3ToSQSS3LoggingBucketPolicyD20E8C8F:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -408,9 +912,27 @@ Resources:
                         - DacInputS3ToSQSS3LoggingBucket92EDF008
                         - Arn
                     - /*
+          - Action: s3:PutObject
+            Condition:
+              ArnLike:
+                aws:SourceArn:
+                  Fn::GetAtt:
+                    - DacInputS3ToSQSS3Bucket20254F8D
+                    - Arn
+              StringEquals:
+                aws:SourceAccount:
+                  Ref: AWS::AccountId
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Resource:
+              Fn::Join:
+                - ""
+                - - Fn::GetAtt:
+                      - DacInputS3ToSQSS3LoggingBucket92EDF008
+                      - Arn
+                  - /*
         Version: "2012-10-17"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/S3LoggingBucket/Policy/Resource
   DacInputS3ToSQSS3Bucket20254F8D:
     Type: AWS::S3::Bucket
     Properties:
@@ -439,8 +961,6 @@ Resources:
         Status: Enabled
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/S3Bucket/Resource
   DacInputS3ToSQSS3BucketPolicy910E9B56:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -466,8 +986,6 @@ Resources:
                         - Arn
                     - /*
         Version: "2012-10-17"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/S3Bucket/Policy/Resource
   DacInputS3ToSQSS3BucketNotificationsFC78CCA7:
     Type: Custom::S3BucketNotifications
     Properties:
@@ -494,8 +1012,6 @@ Resources:
     DependsOn:
       - DacInputS3ToSQSqueuePolicy14406618
       - DacInputS3ToSQSqueueD59411ED
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/S3Bucket/Notifications/Resource
   DacInputS3ToSQSdeadLetterQueue9EBD583A:
     Type: AWS::SQS::Queue
     Properties:
@@ -505,8 +1021,6 @@ Resources:
           Value: ""
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/deadLetterQueue/Resource
   DacInputS3ToSQSdeadLetterQueuePolicy82056AF4:
     Type: AWS::SQS::QueuePolicy
     Properties:
@@ -550,8 +1064,6 @@ Resources:
         Version: "2012-10-17"
       Queues:
         - Ref: DacInputS3ToSQSdeadLetterQueue9EBD583A
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/deadLetterQueue/Policy/Resource
   DacInputS3ToSQSEncryptionKey0AD30D7E:
     Type: AWS::KMS::Key
     Properties:
@@ -595,8 +1107,6 @@ Resources:
       EnableKeyRotation: true
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/EncryptionKey/Resource
   DacInputS3ToSQSqueueD59411ED:
     Type: AWS::SQS::Queue
     Properties:
@@ -616,8 +1126,6 @@ Resources:
       VisibilityTimeout: 360
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/queue/Resource
   DacInputS3ToSQSqueuePolicy14406618:
     Type: AWS::SQS::QueuePolicy
     Properties:
@@ -678,8 +1186,6 @@ Resources:
         Version: "2012-10-17"
       Queues:
         - Ref: DacInputS3ToSQSqueueD59411ED
-    Metadata:
-      aws:cdk:path: MatterStackPAI/DacInputS3ToSQS/queue/Policy/Resource
   BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC:
     Type: AWS::IAM::Role
     Properties:
@@ -696,8 +1202,6 @@ Resources:
             - - "arn:"
               - Ref: AWS::Partition
               - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-    Metadata:
-      aws:cdk:path: MatterStackPAI/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource
   BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36:
     Type: AWS::IAM::Policy
     Properties:
@@ -710,12 +1214,6 @@ Resources:
       PolicyName: BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36
       Roles:
         - Ref: BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC
-    Metadata:
-      aws:cdk:path: MatterStackPAI/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: Bucket resource is '*' due to circular dependency with bucket and role creation at the same time
   BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691:
     Type: AWS::Lambda::Function
     Properties:
@@ -832,16 +1330,6 @@ Resources:
     DependsOn:
       - BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36
       - BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC
-    Metadata:
-      aws:cdk:path: MatterStackPAI/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Resource
-      cfn_nag:
-        rules_to_suppress:
-          - id: W58
-            reason: Lambda functions has the required permission to write CloudWatch Logs. It uses custom policy instead of arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole with tighter permissions.
-          - id: W89
-            reason: This is not a rule for the general case, just for specific use cases/industries
-          - id: W92
-            reason: Impossible for us to define the correct concurrency for clients
   SqsToDacIssuingLambdaLambdaFunctionServiceRoleB25CC72F:
     Type: AWS::IAM::Role
     Properties:
@@ -872,8 +1360,6 @@ Resources:
                       - :log-group:/aws/lambda/*
             Version: "2012-10-17"
           PolicyName: LambdaFunctionServiceRolePolicy
-    Metadata:
-      aws:cdk:path: MatterStackPAI/SqsToDacIssuingLambda/LambdaFunctionServiceRole/Resource
   SqsToDacIssuingLambdaLambdaFunctionServiceRoleDefaultPolicy21809AD9:
     Type: AWS::IAM::Policy
     Properties:
@@ -954,12 +1440,6 @@ Resources:
       PolicyName: SqsToDacIssuingLambdaLambdaFunctionServiceRoleDefaultPolicy21809AD9
       Roles:
         - Ref: SqsToDacIssuingLambdaLambdaFunctionServiceRoleB25CC72F
-    Metadata:
-      aws:cdk:path: MatterStackPAI/SqsToDacIssuingLambda/LambdaFunctionServiceRole/DefaultPolicy/Resource
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: Lambda needs the following minimum required permissions to send trace data to X-Ray and access ENIs in a VPC.
   SqsToDacIssuingLambdaLambdaFunction63CBA51A:
     Type: AWS::Lambda::Function
     Properties:
@@ -971,14 +1451,14 @@ Resources:
         Fn::GetAtt:
           - SqsToDacIssuingLambdaLambdaFunctionServiceRoleB25CC72F
           - Arn
-      Handler: com.sample.Handler
-      MemorySize: 512
-      ReservedConcurrentExecutions: 55
-      Runtime: java11
       Environment:
         Variables:
           dacValidityInDays:
             Ref: dacValidityInDays
+      Handler: com.sample.Handler
+      MemorySize: 512
+      ReservedConcurrentExecutions: 55
+      Runtime: java11
       Tags:
         - Key: matterPKITag
           Value: ""
@@ -988,16 +1468,6 @@ Resources:
     DependsOn:
       - SqsToDacIssuingLambdaLambdaFunctionServiceRoleDefaultPolicy21809AD9
       - SqsToDacIssuingLambdaLambdaFunctionServiceRoleB25CC72F
-    Metadata:
-      aws:cdk:path: MatterStackPAI/SqsToDacIssuingLambda/LambdaFunction/Resource
-      cfn_nag:
-        rules_to_suppress:
-          - id: W58
-            reason: Lambda functions has the required permission to write CloudWatch Logs. It uses custom policy instead of arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole with tighter permissions.
-          - id: W89
-            reason: This is not a rule for the general case, just for specific use cases/industries
-          - id: W92
-            reason: Impossible for us to define the correct concurrency for clients
   SqsToDacIssuingLambdaLambdaFunctionLogRetention3FB85518:
     Type: Custom::LogRetention
     Properties:
@@ -1011,8 +1481,6 @@ Resources:
           - - /aws/lambda/
             - Ref: SqsToDacIssuingLambdaLambdaFunction63CBA51A
       RetentionInDays: 60
-    Metadata:
-      aws:cdk:path: MatterStackPAI/SqsToDacIssuingLambda/LambdaFunction/LogRetention/Resource
   SqsToDacIssuingLambdaLambdaFunctionSqsEventSourceMatterStackPAIDacInputS3ToSQSqueue334B7A2D9472359E:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -1026,8 +1494,6 @@ Resources:
           - Arn
       FunctionResponseTypes:
         - ReportBatchItemFailures
-    Metadata:
-      aws:cdk:path: MatterStackPAI/SqsToDacIssuingLambda/LambdaFunction/SqsEventSource:MatterStackPAIDacInputS3ToSQSqueue334B7A2D/Resource
   LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB:
     Type: AWS::IAM::Role
     Properties:
@@ -1044,8 +1510,6 @@ Resources:
             - - "arn:"
               - Ref: AWS::Partition
               - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-    Metadata:
-      aws:cdk:path: MatterStackPAI/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource
   LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB:
     Type: AWS::IAM::Policy
     Properties:
@@ -1060,13 +1524,11 @@ Resources:
       PolicyName: LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB
       Roles:
         - Ref: LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB
-    Metadata:
-      aws:cdk:path: MatterStackPAI/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource
   LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A:
     Type: AWS::Lambda::Function
     Properties:
       Handler: index.handler
-      Runtime: nodejs14.x
+      Runtime: nodejs16.x
       Code:
         S3Bucket:
           Fn::Sub: ${AWS::AccountId}-matter-cfn-deployment-assets
@@ -1078,8 +1540,6 @@ Resources:
     DependsOn:
       - LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB
       - LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB
-    Metadata:
-      aws:cdk:path: MatterStackPAI/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/Resource
   MatterAuditLoggingBackupPlanE7841230:
     Type: AWS::Backup::BackupPlan
     Properties:
@@ -1094,8 +1554,6 @@ Resources:
               Fn::GetAtt:
                 - MatterAuditLoggingBackupVault52FF6D37
                 - BackupVaultName
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditLoggingBackupPlan/Resource
     Condition: isMultiRegion
   MatterAuditLoggingBackupPlanS3BackupSelection72BC7F41:
     Type: AWS::Backup::BackupSelection
@@ -1112,14 +1570,12 @@ Resources:
               - Ref: AWS::Partition
               - ":iam::"
               - Ref: AWS::AccountId
-              - :role/MatterPKI/S3BackupRole
+              - :role/S3BackupRole
         Resources:
           - Fn::GetAtt:
               - matterpkiauditlogsB56DAB62
               - Arn
         SelectionName: S3BackupSelection
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditLoggingBackupPlan/S3BackupSelection/Resource
     Condition: isMultiRegion
   MatterAuditLoggingBackupVault52FF6D37:
     Type: AWS::Backup::BackupVault
@@ -1127,8 +1583,6 @@ Resources:
       BackupVaultName: MatterAuditLoggingBackupVault
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditLoggingBackupVault/Resource
     Condition: isMultiRegion
   MatterPKIAuditLogsKMSKey8EB68491:
     Type: AWS::KMS::Key
@@ -1167,14 +1621,12 @@ Resources:
                     - Ref: AWS::Partition
                     - ":iam::"
                     - Ref: AWS::AccountId
-                    - :role/MatterPKI/MatterAuditorRole
+                    - :role/MatterAuditorRole
             Resource: "*"
         Version: "2012-10-17"
       EnableKeyRotation: true
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterPKIAuditLogsKMSKey/Resource
     Condition: isMultiRegion
   matterpkiauditlogsB56DAB62:
     Type: AWS::S3::Bucket
@@ -1203,16 +1655,14 @@ Resources:
             Days: 1827
       ObjectLockEnabled: true
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
+        BlockPublicAcls: false
         BlockPublicPolicy: true
-        IgnorePublicAcls: true
+        IgnorePublicAcls: false
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/matter-pki-audit-logs/Resource
     Condition: isMultiRegion
   matterpkiauditlogsPolicyB878ED00:
     Type: AWS::S3::BucketPolicy
@@ -1251,7 +1701,7 @@ Resources:
                     - Ref: AWS::Partition
                     - ":iam::"
                     - Ref: AWS::AccountId
-                    - :role/MatterPKI/MatterAuditorRole
+                    - :role/MatterAuditorRole
             Resource:
               - Fn::GetAtt:
                   - matterpkiauditlogsB56DAB62
@@ -1287,8 +1737,6 @@ Resources:
                   - Ref: AWS::AccountId
                   - /*
         Version: "2012-10-17"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/matter-pki-audit-logs/Policy/Resource
     Condition: isMultiRegion
   MatterAudit3BAC79D2:
     Type: AWS::Logs::LogGroup
@@ -1297,8 +1745,6 @@ Resources:
       RetentionInDays: 60
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAudit/Resource
     Condition: isMultiRegion
   AllPCAEventsFilterE7C3AA2E:
     Type: AWS::Logs::MetricFilter
@@ -1310,8 +1756,6 @@ Resources:
         - MetricName: AllPCAEventsFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/AllPCAEventsFilter/Resource
     Condition: isMultiRegion
   MatterAuditLoggingBucketFilterE3E26940:
     Type: AWS::Logs::MetricFilter
@@ -1328,8 +1772,6 @@ Resources:
         - MetricName: MatterAuditLoggingBucketFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditLoggingBucketFilter/Resource
     Condition: isMultiRegion
   MatterTaggedFilterE39C37A6:
     Type: AWS::Logs::MetricFilter
@@ -1341,8 +1783,6 @@ Resources:
         - MetricName: MatterTaggedFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterTaggedFilter/Resource
     Condition: isMultiRegion
   MatterIssueDACRoleFilterEA7F2FB3:
     Type: AWS::Logs::MetricFilter
@@ -1354,8 +1794,6 @@ Resources:
         - MetricName: MatterIssueDACRoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterIssueDACRoleFilter/Resource
     Condition: isMultiRegion
   MatterAuditorRoleFilter23F9E901:
     Type: AWS::Logs::MetricFilter
@@ -1367,8 +1805,6 @@ Resources:
         - MetricName: MatterAuditorRoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditorRoleFilter/Resource
     Condition: isMultiRegion
   MatterAuditLoggingBackupRoleFilter082062E4:
     Type: AWS::Logs::MetricFilter
@@ -1380,8 +1816,6 @@ Resources:
         - MetricName: MatterAuditLoggingBackupRoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditLoggingBackupRoleFilter/Resource
     Condition: isMultiRegion
   MatterAuditLoggingBackupPlanFilter4DD6905B:
     Type: AWS::Logs::MetricFilter
@@ -1399,8 +1833,6 @@ Resources:
         - MetricName: MatterAuditLoggingBackupPlanFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditLoggingBackupPlanFilter/Resource
     Condition: isMultiRegion
   MatterAuditTrailLogsRoleA5220186:
     Type: AWS::IAM::Role
@@ -1412,8 +1844,6 @@ Resources:
             Principal:
               Service: cloudtrail.amazonaws.com
         Version: "2012-10-17"
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditTrail/LogsRole/Resource
   MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7:
     Type: AWS::IAM::Policy
     Properties:
@@ -1431,8 +1861,6 @@ Resources:
       PolicyName: MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7
       Roles:
         - Ref: MatterAuditTrailLogsRoleA5220186
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditTrail/LogsRole/DefaultPolicy/Resource
     Condition: isMultiRegion
   MatterAuditTrail535B0DA6:
     Type: AWS::CloudTrail::Trail
@@ -1469,16 +1897,7 @@ Resources:
       - matterpkiauditlogsPolicyB878ED00
       - MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7
       - MatterAuditTrailLogsRoleA5220186
-    Metadata:
-      aws:cdk:path: MatterStackPAI/MatterAuditTrail/Resource
     Condition: isMultiRegion
-  CDKMetadata:
-    Type: AWS::CDK::Metadata
-    Properties:
-      Analytics: v2:deflate64:H4sIAAAAAAAA/21SwW7bMAz9lt5ltauxAbstDdYd1mJZHOwaKDKbqZElV6RSDIb+fZTsOUa7i/keSdHkI2/l8KmWt1fqFSvdniprDnJoSOmTWD+5jQqqA4IgdETy3T4A+hg0oFy94rr4tpNLcIn9YFV3aBWXMO5ogby7j06T8U7MgOvO+OsZHDXl/aPqe36Uw++9SRjVyWHjrdF/Smcj2noLmWabBNZ7hQjE3WXDXA53UZ+A7hSCGGFOn9BoLkWXPAmlu17zKBxYQyDzZLQiWEX67YOh8uB//hVPdlZ5Om4Iu6xm4AkuUi515ZQXlMPPCLHMMYLyvbS1oEmcOs7/DiXAJgnrj+x58MctF3RFVSbfgo99zpnxI3Af+t7YqYclT+LAG489y1XsxqqypwUbYQMW5i2+dY38l4qWLuFCk9DWx5aCMlYOu2xyRgEpiTeHlPf5D8+gbJQP8zjdyI9IfSz/WXvXmlHv+kbeXH3Jt4zexuzjq+YPhagJr3NgwLrKmjf1zjcvmPWvpqNluvMPBXNTzrcgn/H6/OGz/Mhln9GYKkRWuAO5He1fdBCtJj4DAAA=
-    Metadata:
-      aws:cdk:path: MatterStackPAI/CDKMetadata/Default
-    Condition: CDKMetadataAvailable
 Outputs:
   CertArnPAI0:
     Description: The certificate Arn for PAI0
@@ -1486,21 +1905,30 @@ Outputs:
       Fn::GetAtt:
         - CertificatePAI03F296F37
         - CertificateArn
-  DACIssuingLambdaFunctionName:
-    Description: The name of the Lambda Function that issues DACs
-    Value:
-      Ref: SqsToDacIssuingLambdaLambdaFunction63CBA51A
   PAI0:
     Description: The ARN of PAI0
     Value:
       Fn::Join:
         - ""
         - - VID=
-          - Ref: vendorId
+          - Fn::GetAtt:
+              - ObtainPaaVid
+              - Result
           - " PID="
-          - Ref: productId
+          - Fn::If:
+              - PidsWereProvided
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt:
+                      - ValidatePid
+                      - pids
+              - ""
           - " CN="
-          - Ref: paiCommonName
+          - Fn::Select:
+              - 0
+              - Fn::Split:
+                  - ","
+                  - Ref: paiCommonNames
           - " "
           - Fn::GetAtt:
               - CAPAI0
@@ -1517,84 +1945,53 @@ Outputs:
               - CAPAI0
               - Arn
           - "&tab=certificate"
-Conditions:
-  isMultiRegion:
-    Fn::Not:
-      - Fn::Equals:
-          - Ref: AWS::Region
+  CertArnPAI1:
+    Description: The certificate Arn for PAI1
+    Value:
+      Fn::GetAtt:
+        - CertificatePAI1C5AB2E2B
+        - CertificateArn
+  PAI1:
+    Description: The ARN of PAI1
+    Value:
+      Fn::Join:
+        - ""
+        - - VID=
+          - Fn::GetAtt:
+              - ObtainPaaVid
+              - Result
+          - " PID="
+          - Fn::If:
+              - PidsWereProvided
+              - Fn::Select:
+                  - 1
+                  - Fn::GetAtt:
+                      - ValidatePid
+                      - pids
+              - ""
+          - " CN="
           - Fn::Select:
-              - 3
+              - 1
               - Fn::Split:
-                  - ":"
-                  - Ref: paaArn
-  CDKMetadataAvailable:
-    Fn::Or:
-      - Fn::Or:
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - af-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-east-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-northeast-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-northeast-2
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-southeast-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-southeast-2
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ca-central-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - cn-north-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - cn-northwest-1
-      - Fn::Or:
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-central-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-north-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-west-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-west-2
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-west-3
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - me-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - sa-east-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-east-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-east-2
-      - Fn::Or:
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-west-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-west-2
+                  - ","
+                  - Ref: paiCommonNames
+          - " "
+          - Fn::GetAtt:
+              - CAPAI1
+              - Arn
+  CertLinkPAI1:
+    Description: The link to the PAI certificate in the AWS Private CA console
+    Value:
+      Fn::Join:
+        - ""
+        - - https://console.aws.amazon.com/acm-pca/home?region=
+          - Ref: AWS::Region
+          - "#/details?arn="
+          - Fn::GetAtt:
+              - CAPAI1
+              - Arn
+          - "&tab=certificate"
+  DACIssuingLambdaFunctionName:
+    Description: The name of the Lambda Function that issues DACs
+    Value:
+      Ref: SqsToDacIssuingLambdaLambdaFunction63CBA51A

@@ -1,20 +1,68 @@
 Parameters:
   validityInDays:
     Type: Number
+    Default: 3650
     Description: Validity in days for new PAA
+  validityEndDate:
+    Type: String
+    Default: ""
+    Description: Validity End Date, is optional and overrides validityInDays. It's in YYYYMMDDHHMMSS format.
   vendorId:
     Type: String
-    Description: The vendorId associated with this PAA
+    Description: The vendorId associated with this PAA. This must be a 4-digit hex value.
   paaCommonName:
     Type: String
-    Description: The Common Name for this PAA
+    Description: The Common Name for this PAA.
   paaOrganization:
     Type: String
-    Description: The Organization associated with this PAA
+    Description: The Organization associated with this PAA.
   paaOU:
     Type: String
-    Description: The Organizational Unit associated with this PAA 
+    Default: ""
+    Description: The Organizational Unit associated with this PAA.
 Resources:
+  CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  CustomLambdaFunctionUtilsCustomResourceProviderHandler6BCB6537:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: ${AWS::AccountId}-matter-cfn-deployment-assets
+        S3Key: LambdaFunctionUtils.zip
+      Timeout: 900
+      MemorySize: 128
+      Handler: __entrypoint__.handler
+      Role:
+        Fn::GetAtt:
+          - CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507
+          - Arn
+      Runtime: nodejs18.x
+      Description: Utility Lambda function
+    DependsOn:
+      - CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507
+  ValidateVid:
+    Type: Custom::ValidateVidType
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomLambdaFunctionUtilsCustomResourceProviderHandler6BCB6537
+          - Arn
+      command: validateVidPid
+      vid:
+        Ref: vendorId
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
   CAPAA:
     Type: AWS::ACMPCA::CertificateAuthority
     Properties:
@@ -22,18 +70,33 @@ Resources:
       SigningAlgorithm: SHA256WITHECDSA
       Subject:
         CustomAttributes:
-          - ObjectIdentifier: 2.5.4.3
-            Value: 
-              Ref: paaCommonName
-          - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
-            Value:
-              Ref: vendorId
-          - ObjectIdentifier: 2.5.4.10
-            Value:
-              Ref: paaOrganization
-          - ObjectIdentifier: 2.5.4.11
-            Value:
-              Ref: paaOU
+          Fn::If:
+            - OrgUnitWasProvided
+            - - ObjectIdentifier: 2.5.4.3
+                Value:
+                  Ref: paaCommonName
+              - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                Value:
+                  Fn::GetAtt:
+                    - ValidateVid
+                    - vid
+              - ObjectIdentifier: 2.5.4.10
+                Value:
+                  Ref: paaOrganization
+              - ObjectIdentifier: 2.5.4.11
+                Value:
+                  Ref: paaOU
+            - - ObjectIdentifier: 2.5.4.3
+                Value:
+                  Ref: paaCommonName
+              - ObjectIdentifier: 1.3.6.1.4.1.37244.2.1
+                Value:
+                  Fn::GetAtt:
+                    - ValidateVid
+                    - vid
+              - ObjectIdentifier: 2.5.4.10
+                Value:
+                  Ref: paaOrganization
       Type: ROOT
       KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
       Tags:
@@ -43,8 +106,6 @@ Resources:
           Value: ""
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAA/CA-PAA
   CertPAA:
     Type: AWS::ACMPCA::Certificate
     Properties:
@@ -58,12 +119,15 @@ Resources:
           - CertificateSigningRequest
       SigningAlgorithm: SHA256WITHECDSA
       Validity:
-        Type: DAYS
-        Value:
-          Ref: validityInDays
+        Fn::If:
+          - ValidityEndDateWasProvided
+          - Type: END_DATE
+            Value:
+              Ref: validityEndDate
+          - Type: DAYS
+            Value:
+              Ref: validityInDays
       TemplateArn: arn:aws:acm-pca:::template/RootCACertificate_APIPassthrough/V1
-    Metadata:
-      aws:cdk:path: MatterStackPAA/Cert-PAA
   CertActivationPAA:
     Type: AWS::ACMPCA::CertificateAuthorityActivation
     Properties:
@@ -76,8 +140,6 @@ Resources:
           - CAPAA
           - Arn
       Status: ACTIVE
-    Metadata:
-      aws:cdk:path: MatterStackPAA/CertActivation-PAA
   MatterManagePAARole206A10AF:
     Type: AWS::IAM::Role
     Properties:
@@ -100,8 +162,6 @@ Resources:
       Tags:
         - Key: matterPKITag
           Value: ""
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterManagePAARole/Resource
   MatterPAAD2AC60DA:
     Type: AWS::IAM::Policy
     Properties:
@@ -124,8 +184,6 @@ Resources:
       PolicyName: MatterPAAD2AC60DA
       Roles:
         - Ref: MatterManagePAARole206A10AF
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterPAA/Resource
   MatterIssuePAIRole9F2B04D3:
     Type: AWS::IAM::Role
     Properties:
@@ -148,8 +206,6 @@ Resources:
       Tags:
         - Key: matterPKITag
           Value: ""
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterIssuePAIRole/Resource
   IssuePAICertEBF36D03:
     Type: AWS::IAM::Policy
     Properties:
@@ -205,8 +261,6 @@ Resources:
       PolicyName: IssuePAICertEBF36D03
       Roles:
         - Ref: MatterIssuePAIRole9F2B04D3
-    Metadata:
-      aws:cdk:path: MatterStackPAA/IssuePAICert/Resource
   MatterAuditorRole03712E04:
     Type: AWS::IAM::Role
     Properties:
@@ -229,8 +283,6 @@ Resources:
       Tags:
         - Key: matterPKITag
           Value: ""
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditorRole/Resource
   MatterAuditorRoleDefaultPolicy27A0C339:
     Type: AWS::IAM::Policy
     Properties:
@@ -253,8 +305,6 @@ Resources:
       PolicyName: MatterAuditorRoleDefaultPolicy27A0C339
       Roles:
         - Ref: MatterAuditorRole03712E04
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditorRole/DefaultPolicy/Resource
   MatterAuditorD8BE1FAA:
     Type: AWS::IAM::Policy
     Properties:
@@ -294,8 +344,6 @@ Resources:
       PolicyName: MatterAuditorD8BE1FAA
       Roles:
         - Ref: MatterAuditorRole03712E04
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditor/Resource
   S3BackupRole5A829B6E:
     Type: AWS::IAM::Role
     Properties:
@@ -329,8 +377,6 @@ Resources:
               - :iam::aws:policy/AWSBackupServiceRolePolicyForS3Restore
       Path: /MatterPKI/
       RoleName: S3BackupRole
-    Metadata:
-      aws:cdk:path: MatterStackPAA/S3BackupRole/Resource
   MatterIssueDACRoleD87F8C18:
     Type: AWS::IAM::Role
     Properties:
@@ -353,8 +399,6 @@ Resources:
       Tags:
         - Key: matterPKITag
           Value: ""
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterIssueDACRole/Resource
   IssueDACCertC12F3700:
     Type: AWS::IAM::Policy
     Properties:
@@ -393,8 +437,6 @@ Resources:
       PolicyName: IssueDACCertC12F3700
       Roles:
         - Ref: MatterIssueDACRoleD87F8C18
-    Metadata:
-      aws:cdk:path: MatterStackPAA/IssueDACCert/Resource
   MatterAuditLoggingBackupPlanE7841230:
     Type: AWS::Backup::BackupPlan
     Properties:
@@ -409,8 +451,6 @@ Resources:
               Fn::GetAtt:
                 - MatterAuditLoggingBackupVault52FF6D37
                 - BackupVaultName
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditLoggingBackupPlan/Resource
   MatterAuditLoggingBackupPlanS3BackupSelection72BC7F41:
     Type: AWS::Backup::BackupSelection
     Properties:
@@ -428,16 +468,12 @@ Resources:
               - matterpkiauditlogsB56DAB62
               - Arn
         SelectionName: S3BackupSelection
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditLoggingBackupPlan/S3BackupSelection/Resource
   MatterAuditLoggingBackupVault52FF6D37:
     Type: AWS::Backup::BackupVault
     Properties:
       BackupVaultName: MatterAuditLoggingBackupVault
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditLoggingBackupVault/Resource
   MatterPKIAuditLogsKMSKey8EB68491:
     Type: AWS::KMS::Key
     Properties:
@@ -477,8 +513,6 @@ Resources:
       EnableKeyRotation: true
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterPKIAuditLogsKMSKey/Resource
   matterpkiauditlogsB56DAB62:
     Type: AWS::S3::Bucket
     Properties:
@@ -506,16 +540,14 @@ Resources:
             Days: 1827
       ObjectLockEnabled: true
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
+        BlockPublicAcls: false
         BlockPublicPolicy: true
-        IgnorePublicAcls: true
+        IgnorePublicAcls: false
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAA/matter-pki-audit-logs/Resource
   matterpkiauditlogsPolicyB878ED00:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -585,8 +617,6 @@ Resources:
                   - Ref: AWS::AccountId
                   - /*
         Version: "2012-10-17"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/matter-pki-audit-logs/Policy/Resource
   MatterAudit3BAC79D2:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -594,8 +624,6 @@ Resources:
       RetentionInDays: 60
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAudit/Resource
   AllPCAEventsFilterE7C3AA2E:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -606,8 +634,6 @@ Resources:
         - MetricName: AllPCAEventsFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/AllPCAEventsFilter/Resource
   MatterAuditLoggingBucketFilterE3E26940:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -623,8 +649,6 @@ Resources:
         - MetricName: MatterAuditLoggingBucketFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditLoggingBucketFilter/Resource
   MatterTaggedFilterE39C37A6:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -635,8 +659,6 @@ Resources:
         - MetricName: MatterTaggedFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterTaggedFilter/Resource
   MatterPAARoleFilter44C49326:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -651,8 +673,6 @@ Resources:
         - MetricName: MatterPAARoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterPAARoleFilter/Resource
   MatterPAIRoleFilter61075128:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -667,8 +687,6 @@ Resources:
         - MetricName: MatterPAIRoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterPAIRoleFilter/Resource
   MatterAuditorRoleFilter23F9E901:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -683,8 +701,6 @@ Resources:
         - MetricName: MatterAuditorRoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditorRoleFilter/Resource
   MatterAuditLoggingBackupRoleFilter082062E4:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -699,8 +715,6 @@ Resources:
         - MetricName: MatterAuditLoggingBackupRoleFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditLoggingBackupRoleFilter/Resource
   MatterAuditLoggingBackupPlanFilter4DD6905B:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -717,8 +731,6 @@ Resources:
         - MetricName: MatterAuditLoggingBackupPlanFilter
           MetricNamespace: CloudTrail
           MetricValue: "1"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditLoggingBackupPlanFilter/Resource
   MatterAuditTrailLogsRoleA5220186:
     Type: AWS::IAM::Role
     Properties:
@@ -729,8 +741,6 @@ Resources:
             Principal:
               Service: cloudtrail.amazonaws.com
         Version: "2012-10-17"
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditTrail/LogsRole/Resource
   MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7:
     Type: AWS::IAM::Policy
     Properties:
@@ -748,8 +758,6 @@ Resources:
       PolicyName: MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7
       Roles:
         - Ref: MatterAuditTrailLogsRoleA5220186
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditTrail/LogsRole/DefaultPolicy/Resource
   MatterAuditTrail535B0DA6:
     Type: AWS::CloudTrail::Trail
     Properties:
@@ -785,15 +793,17 @@ Resources:
       - matterpkiauditlogsPolicyB878ED00
       - MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7
       - MatterAuditTrailLogsRoleA5220186
-    Metadata:
-      aws:cdk:path: MatterStackPAA/MatterAuditTrail/Resource
-  CDKMetadata:
-    Type: AWS::CDK::Metadata
-    Properties:
-      Analytics: v2:deflate64:H4sIAAAAAAAA/3VQy07DMBD8lt6dBVqBxLFEKgdARCniilzHLds4duSsi5Dlf8cPiYQDp5nZGe2uZg13G1iv+NdUia6vFB7A74mLntVH3XDLB0nSsuh/eC6GUXDw0amlJTyi4CS3jj6NRfpmf+fsn9hWEF44odGBIR/At0blcMbGKBR5VWGBHeIzbgT/kLFRXCd3oQrdSyVF2jq786jod+4UzXaWgfXDBP5J5psRAps28ZgTvSzZwgrM3y11YMqc4pJnc3q0xo3J/+UvkiyKHapUYzSWOjChjOvIclTg3xKkSCYhJPrqaHTEWjkZZ0WpacFrozssVWrTSThPV5ebe7iF69V5Qqys04SDhLbgDzMntgbtAQAA
-    Metadata:
-      aws:cdk:path: MatterStackPAA/CDKMetadata/Default
-    Condition: CDKMetadataAvailable
+Conditions:
+  ValidityEndDateWasProvided:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: validityEndDate
+          - ""
+  OrgUnitWasProvided:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: paaOU
+          - ""
 Outputs:
   PAACertArn:
     Description: The ARN of the PAA certificate
@@ -819,7 +829,9 @@ Outputs:
       Fn::Join:
         - ""
         - - VID=
-          - Ref: vendorId
+          - Fn::GetAtt:
+              - ValidateVid
+              - vid
           - " CN="
           - Ref: paaCommonName
           - " "
@@ -836,75 +848,3 @@ Outputs:
       Fn::GetAtt:
         - MatterAuditTrail535B0DA6
         - Arn
-Conditions:
-  CDKMetadataAvailable:
-    Fn::Or:
-      - Fn::Or:
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - af-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-east-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-northeast-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-northeast-2
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-southeast-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ap-southeast-2
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - ca-central-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - cn-north-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - cn-northwest-1
-      - Fn::Or:
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-central-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-north-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-west-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-west-2
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - eu-west-3
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - me-south-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - sa-east-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-east-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-east-2
-      - Fn::Or:
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-west-1
-          - Fn::Equals:
-              - Ref: AWS::Region
-              - us-west-2

@@ -72,7 +72,7 @@ export class MatterStack extends Stack {
 
         let paaRegion: string = this.region;
         if (root) {
-            const paaCrlBucketName = (crlBucketName === undefined) ? 'matter-crl-paa-bucket' : crlBucketName;
+            const paaCrlBucketName = prefix + (crlBucketName ?? 'matter-crl-paa-bucket');
 
             // Create Or Fetch PAA
             let paaArn: string;
@@ -114,7 +114,7 @@ export class MatterStack extends Stack {
                     default: ''
                 }).valueAsString;
 
-                const crlBucket = this.createMatterCrlBucket(prefix, paaCrlBucketName);
+                const crlBucket = this.createMatterCrlBucket(paaCrlBucketName);
                 const validity = this.createPcaValidityInstance(validityInDays, validityEndDate);
                 const paaActivation = this.createPAA(commonName, crlBucket.bucketName, paaOrganization, paaOrganizationUnit, validity, vendorId);
                 paaArn = paaActivation.certificateAuthorityArn
@@ -128,7 +128,7 @@ export class MatterStack extends Stack {
             this.matterIssueDACRole = this.createMatterIssueDACRole(prefix + MatterStack.MATTER_ISSUE_DAC_ROLE);
         }
         else {
-            const paiCrlBucketName = (crlBucketName === undefined) ? 'matter-crl-paa-bucket' : crlBucketName;
+            const paiCrlBucketName = prefix + (crlBucketName ?? 'matter-crl-pai-bucket');
 
             // Create PAI
             let prodIdsInput = new CfnParameter(this, "productIds", {
@@ -182,8 +182,8 @@ export class MatterStack extends Stack {
             const vendorId = this.getPaaVendorId(paaArn, paaRegion);
             const paaPem = this.getCertificatePem(id, paaArn, paaRegion);
             const validity = this.createPcaValidityStrings(validityInDays, validityEndDate);
+            const crlBucket = this.createMatterCrlBucket(paiCrlBucketName);
             for (let index = 0; index < parseInt(genPaiCnt); index++) {
-                const crlBucket = this.createMatterCrlBucket(prefix, paiCrlBucketName);
                 const commonName = Fn.select(index, Fn.split(',', commonNames));
                 const organization = Fn.select(index, Fn.split(',', organizations));
                 const organizationalUnit = Fn.conditionIf(ouSet.logicalId, Fn.select(index, Fn.split(',', organizationalUnits)), '');
@@ -622,8 +622,8 @@ export class MatterStack extends Stack {
     }
 
     // Creates the S3 bucket that will hold the CRLs for the Matter PKI.
-    private createMatterCrlBucket(prefix: string, crlBucketName: string): Bucket {
-        const matterCrlBucket = new Bucket(this, prefix + crlBucketName, {
+    private createMatterCrlBucket(crlBucketName: string): Bucket {
+        const matterCrlBucket = new Bucket(this, crlBucketName, {
             autoDeleteObjects: true,
             versioned: false,
             blockPublicAccess: {

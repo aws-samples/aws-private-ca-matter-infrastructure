@@ -2,7 +2,7 @@
 
 This example demonstrates the use of AWS CDK to set up Public Key Infrastructure (PKI) infrastructure using AWS Private CA to help you meet the requirements of the Matter PKI Certificate Policy (CP) approved on December 19, 2022. Matter is a new standard for smart home security and device interoperability. Matter uses X.509 digital certificates to identify devices. Matter certificates can be issued only by CAs that comply with the Matter PKI Certificate Policy (CP). For more details about Matter, please see https://csa-iot.org/all-solutions/matter/.
 
-The `cdk.json` file in this module instructs the CDK Toolkit how to deploy this sample into your AWS account. You can use this example to create Matter Product Attestation Authorities (PAA), Product Attestion Intermediates (PAI), AWS Identity and Access Management (IAM) roles and configure logging and log retention. Please note that in order for the DCL to view your Certificate Authority's CRLs, you must disable Block Public Access for your account.
+The `cdk.json` file in this module instructs the CDK Toolkit how to deploy this sample into your AWS account. You can use this example to create Matter Product Attestation Authorities (PAA), Product Attestion Intermediates (PAI), AWS Identity and Access Management (IAM) roles and configure logging and log retention. Please note that in order for the DCL to view your Certificate Authority's CRLs, you must disable Block Public Access for your account, please see https://docs.aws.amazon.com/AmazonS3/latest/userguide/configuring-block-public-access-account.html.
 
 ## Multi-Party authorization with Change Manager
 
@@ -56,7 +56,7 @@ When deploying the application, you can configure it to support different use ca
 3. To generate PAIs in the same AWS Region as the PAA
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY> --parameters paiCommonNames=<CN1,...> --parameters paiOrganizations=<O1,...>
    ```
 4. To generate PAIs in a different AWS Region from the PAA
 

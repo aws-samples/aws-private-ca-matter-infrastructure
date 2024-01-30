@@ -157,11 +157,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-<<<<<<< HEAD
-            - '","physicalResourceId":{"id":"1708974755310"}}'
-=======
             - '","physicalResourceId":{"id":"1708980779095"}}'
->>>>>>> 81ecdd1 (Add support for disabling CDP Extension)
       Update:
         Fn::Join:
           - ""
@@ -173,11 +169,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-<<<<<<< HEAD
-            - '","physicalResourceId":{"id":"1708974755310"}}'
-=======
             - '","physicalResourceId":{"id":"1708980779095"}}'
->>>>>>> 81ecdd1 (Add support for disabling CDP Extension)
       InstallLatestAwsSdk: true
     DependsOn:
       - PaaPemMatterStackPAICustomResourcePolicy93FEF6DD

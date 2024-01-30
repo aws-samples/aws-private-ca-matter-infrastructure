@@ -1,6 +1,9 @@
 [ req ]
 output_password = 1234
 req_extensions = v3_extensions
+distinguished_name = req_distinguished_name
+
+[req_distinguished_name]
 
 [ v3_extensions ]
 basicConstraints = critical, CA:false

@@ -27,6 +27,10 @@ Parameters:
     Type: String
     Default: ""
     Description: The Organizational Unit associated with this PAI
+  crlBucketName:
+    Type: String
+    Default: ""
+    Description: The Bucket Name for the CRL Bucket
 Conditions:
   PidsWereProvided:
     Fn::Not:
@@ -221,6 +225,14 @@ Resources:
     Properties:
       KeyAlgorithm: EC_prime256v1
       SigningAlgorithm: SHA256WITHECDSA
+      RevocationConfiguration:
+        CrlConfiguration:
+          Enabled: true
+          ExpirationInDays: 90
+          S3ObjectAcl : "BUCKET_OWNER_FULL_CONTROL"
+          S3BucketName: Ref: crlBucketName
+          CrlDistributionPointExtensionConfiguration:
+            OmitExtension: true
       Subject:
         CustomAttributes:
           Fn::If:
@@ -483,7 +495,7 @@ Resources:
                     - ":"
                     - Ref: paaArn
             - '","physicalResourceId":{"id":"1694239452467"}}'
-      InstallLatestAwsSdk: false
+      InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePemPAI0CustomResourcePolicyBA6B7480
     UpdateReplacePolicy: Delete
@@ -784,7 +796,7 @@ Resources:
                     - ":"
                     - Ref: paaArn
             - '","physicalResourceId":{"id":"1694239452468"}}'
-      InstallLatestAwsSdk: false
+      InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePemPAI1CustomResourcePolicy83BE6455
     UpdateReplacePolicy: Delete

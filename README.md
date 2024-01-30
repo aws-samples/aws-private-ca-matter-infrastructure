@@ -64,7 +64,7 @@ When deploying the application, you can configure it to support different use ca
    (see [AWS Cloud Development Kit documentation](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-environment)):
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY> --parameters crlBucketName=<CRL_BUCKET_NAME> --parameters paiCommonNames=<CN1,...> --parameters paiOrganizations=<O1,...>
    ```
 5. To add more PAIs to the existing infrastructure
 
@@ -108,6 +108,7 @@ When deploying the application, you can configure it to support different use ca
 10. `--parameters paiCommonNames=<CN1>,<CN2>,...` - CommonNames (CN) are included in the Subjects of the PAIs. Note that the number of CommonNames provided should equal the `generatePaiCnt` parameter's value.
 11. `--parameters paiOrganizations=<O1>,<02>,...` - Organizations (O) are included in the Subjects of the PAIs. Note that the number of Organizations provided should equal the `generatePaiCnt` parameter's value.
 12. `--parameters paiOrganizationalUnits=<OU1>,<0U2>,...` - If set, these OrganizationalUnits (OU) are included in the Subjects of the PAIs. Note that the number of OrganizationalUnits provided should equal the `generatePaiCnt` parameter's value.
+13. `--parameters crlBucketName=<s3BucektName>` - This sets the S3 Bucket your PAIs will use to store their CRL.
 
 ### Context options
 1. `--context generatePaiCnt=<NUM>` - If set, `<NUM>` new PAIs derived from PAA are created.

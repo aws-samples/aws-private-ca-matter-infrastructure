@@ -32,7 +32,7 @@ import {
     ServicePrincipal
 } from 'aws-cdk-lib/aws-iam';
 import {S3EventSelector, Trail} from "aws-cdk-lib/aws-cloudtrail"
-import {BlockPublicAccess, Bucket, BucketEncryption, CfnBucket, StorageClass} from 'aws-cdk-lib/aws-s3';
+import {Bucket, BucketEncryption, CfnBucket, IBucket, StorageClass} from 'aws-cdk-lib/aws-s3';
 import {Schedule} from "aws-cdk-lib/aws-events";
 import {BackupPlan, BackupPlanRule, BackupResource, BackupVault} from "aws-cdk-lib/aws-backup";
 import {LogGroup, MetricFilter, RetentionDays} from "aws-cdk-lib/aws-logs";
@@ -54,7 +54,7 @@ export class MatterStack extends Stack {
 
     public static readonly matterPKITag = "matterPKITag";       // The tag that should be attached to all PAIs created in PCA.
     public static readonly matterCATypeTag = "matterCAType";    // The tag that should be attached to all CAs created in PCA and have value "paa" or "pai" only.
-
+    public static readonly matterCrlBucketName = "matter-crl-bucket";
 
     public static readonly MATTER_ISSUE_PAI_ROLE_NAME =  "MatterIssuePAIRole"
     public static readonly MATTER_MANAGE_PAA_ROLE_NAME = "MatterManagePAARole"
@@ -66,9 +66,10 @@ export class MatterStack extends Stack {
     constructor(scope: Construct, id: string, prefix: string, genPaiCnt: string | undefined) {
         super(scope, id);
 
+        const root = genPaiCnt === undefined;
+
         // Note that CFN parameters are ony defined when you deploy resulting CFN template and provide values for them.
 
-        const root = genPaiCnt === undefined;
         let paaRegion: string = this.region;
         if (root) {
             // Create Or Fetch PAA
@@ -111,8 +112,9 @@ export class MatterStack extends Stack {
                     default: ''
                 }).valueAsString;
 
+                const crlBucket = this.createMatterCrlBucket(MatterStack.matterCrlBucketName);
                 const validity = this.createPcaValidityInstance(validityInDays, validityEndDate);
-                const paaActivation = this.createPAA(commonName, paaOrganization, paaOrganizationUnit, validity, vendorId);
+                const paaActivation = this.createPAA(commonName, crlBucket.bucketName, paaOrganization, paaOrganizationUnit, validity, vendorId);
                 paaArn = paaActivation.certificateAuthorityArn
             }
 
@@ -159,6 +161,10 @@ export class MatterStack extends Stack {
                 type: "String",
                 description: "The Common Name for this PAI"
             }).valueAsString;
+            let crlBucketName = new CfnParameter(this, 'crlBucketName', {
+                type: "String",
+                description: "The Bucket Name for the CRL Bucket"
+            }).valueAsString;
             let organizations = new CfnParameter(this, 'paiOrganizations', {
                 type: "String",
                 description: "The Organization associated with this PAI"
@@ -180,7 +186,7 @@ export class MatterStack extends Stack {
                 const commonName = Fn.select(index, Fn.split(',', commonNames));
                 const organization = Fn.select(index, Fn.split(',', organizations));
                 const organizationalUnit = Fn.conditionIf(ouSet.logicalId, Fn.select(index, Fn.split(',', organizationalUnits)), '');
-                this.createPAI(commonName, organization, organizationalUnit, ouSet, validity, vendorId, index, prodIds, prodIdsSet, paaArn, paaRegion, paaPem);
+                this.createPAI(commonName, crlBucketName, organization, organizationalUnit, ouSet, validity, vendorId, index, prodIds, prodIdsSet, paaArn, paaRegion, paaPem);
             }
 
             // Global resources.
@@ -614,6 +620,45 @@ export class MatterStack extends Stack {
         return [matterAuditLoggingBucket, dependencies];
     }
 
+    // Creates the S3 bucket that will hold the CRLs for the Matter PKI.
+    private createMatterCrlBucket(name: string): Bucket {
+        const matterCrlBucket = new Bucket(this, name, {
+            versioned: true,
+            blockPublicAccess: {
+                blockPublicPolicy: true,
+                restrictPublicBuckets: true,
+                blockPublicAcls: true,
+                ignorePublicAcls: true
+            },
+            encryption: BucketEncryption.S3_MANAGED,
+            enforceSSL: true,
+        });
+
+        matterCrlBucket.addToResourcePolicy(
+            new PolicyStatement({
+                actions: ["s3:GetBucketAcl",
+                    "s3:GetBucketLocation",
+                    "s3:PutObject",
+                    "s3:PutObjectAcl"],
+                effect: Effect.ALLOW,
+                resources: [matterCrlBucket.bucketArn, matterCrlBucket.arnForObjects('*')],
+                principals: [new ServicePrincipal('acm-pca.amazonaws.com')]
+            })
+        );
+
+        new CfnOutput(this, 'CrlBucketUrl', {
+            value: matterCrlBucket.bucketWebsiteUrl,
+            description: 'The url of the S3 Bucket used for storing CRLs',
+        });
+
+        new CfnOutput(this, 'CrlBucketName', {
+            value: matterCrlBucket.bucketName,
+            description: 'The name of the S3 Bucket used for storing CRLs',
+        });
+
+        return matterCrlBucket;
+    }
+
     // Creates the CloudWatch LogGroup where matter PKI audit logs will be filtered and displayed.
     public createAuditLogGroup(prefix: string, root: boolean, matterAuditLoggingBucket: Bucket, matterAuditLoggingBackupPlan: BackupPlan): [LogGroup, IConstruct[]] {
         const dependencies: IConstruct[] = []
@@ -726,6 +771,7 @@ export class MatterStack extends Stack {
     }
 
     private createPAA(commonName: string,
+                      crlBucketName: string,
                       organization: string,
                       organizationalUnit: string,
                       validity: ICfnRuleConditionExpression,
@@ -774,6 +820,17 @@ export class MatterStack extends Stack {
             keyAlgorithm: 'EC_prime256v1',
             signingAlgorithm: 'SHA256WITHECDSA',
             keyStorageSecurityStandard: 'FIPS_140_2_LEVEL_3_OR_HIGHER',
+            revocationConfiguration: {
+                crlConfiguration: {
+                    enabled: true,
+                    expirationInDays: 90,
+                    s3ObjectAcl: "BUCKET_OWNER_FULL_CONTROL",
+                    s3BucketName: crlBucketName,
+                    crlDistributionPointExtensionConfiguration: {
+                        omitExtension: true
+                    }
+                }
+            },
             subject: {
                 customAttributes: Fn.conditionIf(useCustomAttrsWithOU.logicalId, customAttributesWithOU, customAttributes)
             },
@@ -819,6 +876,7 @@ export class MatterStack extends Stack {
     }
 
     private createPAI(commonName: string,
+                      crlBucketName: string,
                       organization: string,
                       organizationalUnit: ICfnConditionExpression,
                       organizationalUnitSet: CfnCondition,
@@ -927,6 +985,17 @@ export class MatterStack extends Stack {
             subject: {
                 customAttributes: targetCustomAttributes
             },
+            revocationConfiguration: {
+                crlConfiguration: {
+                    enabled: true,
+                    expirationInDays: 90,
+                    s3ObjectAcl: "BUCKET_OWNER_FULL_CONTROL",
+                    s3BucketName: crlBucketName,
+                    crlDistributionPointExtensionConfiguration: {
+                        omitExtension: true
+                    }
+                }
+            },
             tags: [
                 { key: MatterStack.matterCATypeTag, value: "pai" },
                 { key: MatterStack.matterPKITag, value: "" }
@@ -1014,7 +1083,7 @@ export class MatterStack extends Stack {
                     }),
                 ],
             },
-            installLatestAwsSdk: false
+            installLatestAwsSdk: true
         }).getResponseField('Certificate');
 
         const caCertArnOutputName = 'CertArnPAI' + paiId!;
@@ -1067,7 +1136,7 @@ export class MatterStack extends Stack {
                     }),
                 ],
             },
-            installLatestAwsSdk: false
+            installLatestAwsSdk: true
         }).getResponseField('Certificate');
     }
 

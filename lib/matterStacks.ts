@@ -33,7 +33,7 @@ import {
     ServicePrincipal
 } from 'aws-cdk-lib/aws-iam';
 import {S3EventSelector, Trail} from "aws-cdk-lib/aws-cloudtrail"
-import {Bucket, BucketAccessControl, BucketEncryption, CfnBucket, ObjectOwnership, StorageClass} from 'aws-cdk-lib/aws-s3';
+import {Bucket, BucketEncryption, CfnBucket, StorageClass} from 'aws-cdk-lib/aws-s3';
 import {Schedule} from "aws-cdk-lib/aws-events";
 import {BackupPlan, BackupPlanRule, BackupResource, BackupVault} from "aws-cdk-lib/aws-backup";
 import {LogGroup, MetricFilter, RetentionDays} from "aws-cdk-lib/aws-logs";
@@ -56,6 +56,9 @@ export class MatterStack extends Stack {
     public static readonly matterPKITag = "matterPKITag";       // The tag that should be attached to all PAIs created in PCA.
     public static readonly matterCATypeTag = "matterCAType";    // The tag that should be attached to all CAs created in PCA and have value "paa" or "pai" only.
 
+    public static readonly MATTER_PAA_CRL_BUCKET_NAME = 'matter-crl-paa-bucket';
+    public static readonly MATTER_PAI_CRL_BUCKET_NAME = 'matter-crl-pai-bucket'
+
     public static readonly MATTER_ISSUE_PAI_ROLE_NAME =  "MatterIssuePAIRole"
     public static readonly MATTER_MANAGE_PAA_ROLE_NAME = "MatterManagePAARole"
     public static readonly MATTER_AUDITOR_ROLE_NAME = "MatterAuditorRole"
@@ -72,7 +75,7 @@ export class MatterStack extends Stack {
 
         let paaRegion: string = this.region;
         if (root) {
-            const paaCrlBucketName = prefix + (crlBucketName ?? 'matter-crl-paa-bucket');
+            const paaCrlBucketName = prefix + (crlBucketName ?? MatterStack.MATTER_PAA_CRL_BUCKET_NAME);
 
             // Create Or Fetch PAA
             let paaArn: string;
@@ -128,7 +131,7 @@ export class MatterStack extends Stack {
             this.matterIssueDACRole = this.createMatterIssueDACRole(prefix + MatterStack.MATTER_ISSUE_DAC_ROLE);
         }
         else {
-            const paiCrlBucketName = prefix + (crlBucketName ?? 'matter-crl-pai-bucket');
+            const paiCrlBucketName = prefix + (crlBucketName ?? MatterStack.MATTER_PAI_CRL_BUCKET_NAME);
 
             // Create PAI
             let prodIdsInput = new CfnParameter(this, "productIds", {
@@ -626,6 +629,7 @@ export class MatterStack extends Stack {
         const matterCrlBucket = new Bucket(this, crlBucketName, {
             autoDeleteObjects: true,
             versioned: false,
+            bucketName: crlBucketName,
             blockPublicAccess: {
                 blockPublicPolicy: false,
                 restrictPublicBuckets: false,

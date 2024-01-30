@@ -27,10 +27,6 @@ Parameters:
     Type: String
     Default: ""
     Description: The Organizational Unit associated with this PAI
-  crlBucketName:
-    Type: String
-    Default: "matter-crl-pai-bucket"
-    Description: The unique name for the S3 bucket used to store the CRLs for this CA.
 Conditions:
   PidsWereProvided:
     Fn::Not:
@@ -157,7 +153,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452458"}}'
+            - '","physicalResourceId":{"id":"1708974755310"}}'
       Update:
         Fn::Join:
           - ""
@@ -169,8 +165,8 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452458"}}'
-      InstallLatestAwsSdk: false
+            - '","physicalResourceId":{"id":"1708974755310"}}'
+      InstallLatestAwsSdk: true
     DependsOn:
       - PaaPemMatterStackPAICustomResourcePolicy93FEF6DD
     UpdateReplacePolicy: Delete
@@ -211,83 +207,171 @@ Resources:
         S3Bucket:
           Fn::Sub: ${AWS::AccountId}-matter-cfn-deployment-assets
         S3Key: PcaAwsCall.zip
+      Handler: index.handler
       Role:
         Fn::GetAtt:
           - AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
           - Arn
-      Handler: index.handler
-      Runtime: nodejs16.x
+      Runtime: nodejs18.x
       Timeout: 120
     DependsOn:
       - AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
-  CrlBucketName6B0FB645:
+  mattercrlpaibucket5737CA07:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Delete
     Properties:
-      BucketName:
-        Ref: crlBucketName
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: BucketOwnerPreferred
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-      Tags: 
-        - Key: "Purpose"
-          Value: "AWSPCA Certificate Revocation List"
+      BucketName: matter-crl-pai-bucket
       PublicAccessBlockConfiguration:
-        RestrictPublicBuckets: False
-        BlockPublicAcls: True
-        BlockPublicPolicy: False
-        IgnorePublicAcls: True
-  CrlBucketPolicy:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: aws-cdk:auto-delete-objects
+          Value: "true"
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  mattercrlpaibucketPolicyEE274CF0:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref CrlBucketName6B0FB645
+      Bucket:
+        Ref: mattercrlpaibucket5737CA07
       PolicyDocument:
         Statement:
-          - Sid: AllowAWSPCAPutObjectAccessForCRLAndChainCertificates
-            Action:
-              - "s3:GetBucketAcl"
-              - "s3:GetBucketLocation"
-              - "s3:PutObject"
-              - "s3:PutObjectAcl"
-            Effect: "Allow"
-            Resource:
-              - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645, "/*"]]
-              - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645]]
+          - Action: s3:*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Effect: Deny
             Principal:
-              Service:
-                - "acm-pca.amazonaws.com"
-  CrlPublicBucketPolicy:
-    Type: AWS::S3::BucketPolicy
+              AWS: "*"
+            Resource:
+              - Fn::GetAtt:
+                  - mattercrlpaibucket5737CA07
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - mattercrlpaibucket5737CA07
+                        - Arn
+                    - /*
+          - Action:
+              - s3:DeleteObject*
+              - s3:GetBucket*
+              - s3:List*
+              - s3:PutBucketPolicy
+            Effect: Allow
+            Principal:
+              AWS:
+                Fn::GetAtt:
+                  - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+                  - Arn
+            Resource:
+              - Fn::GetAtt:
+                  - mattercrlpaibucket5737CA07
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - mattercrlpaibucket5737CA07
+                        - Arn
+                    - /*
+          - Action: s3:GetObject
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Resource:
+              Fn::Join:
+                - ""
+                - - Fn::GetAtt:
+                      - mattercrlpaibucket5737CA07
+                      - Arn
+                  - /crl/*
+          - Action:
+              - s3:GetBucketAcl
+              - s3:GetBucketLocation
+              - s3:PutObject
+              - s3:PutObjectAcl
+            Effect: Allow
+            Principal:
+              Service: acm-pca.amazonaws.com
+            Resource:
+              - Fn::GetAtt:
+                  - mattercrlpaibucket5737CA07
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - mattercrlpaibucket5737CA07
+                        - Arn
+                    - /*
+        Version: "2012-10-17"
+  mattercrlpaibucketAutoDeleteObjectsCustomResourceA8D62043:
+    Type: Custom::S3AutoDeleteObjects
     Properties:
-      Bucket: !Ref CrlBucketName6B0FB645
-      PolicyDocument:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F
+          - Arn
+      BucketName:
+        Ref: mattercrlpaibucket5737CA07
+    DependsOn:
+      - mattercrlpaibucketPolicyEE274CF0
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
         Statement:
-        - Sid: AllowPublicGetObjectAccessForCRL
-          Action:
-            - "s3:GetObject"
-          Effect: "Allow"
-          Resource:
-            - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645, "/crl/*"]]
-          Principal:
-            AWS:
-              - "*"
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}
+        S3Key: b7f33614a69548d6bafe224d751a7ef238cde19097415e553fe8b63a4c8fd8a6.zip
+      Timeout: 900
+      MemorySize: 128
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
+          - Arn
+      Runtime: nodejs18.x
+      Description:
+        Fn::Join:
+          - ""
+          - - "Lambda function for auto-deleting objects in "
+            - Ref: mattercrlpaibucket5737CA07
+            - " S3 bucket."
+    DependsOn:
+      - CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092
   CAPAI0:
     Type: AWS::ACMPCA::CertificateAuthority
     Properties:
       KeyAlgorithm: EC_prime256v1
-      SigningAlgorithm: SHA256WITHECDSA
+      KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
       RevocationConfiguration:
         CrlConfiguration:
-          Enabled: true
-          ExpirationInDays: 90
-          S3ObjectAcl : "BUCKET_OWNER_FULL_CONTROL"
-          S3BucketName: !Ref CrlBucketName6B0FB645
           CrlDistributionPointExtensionConfiguration:
             OmitExtension: true
+          Enabled: true
+          ExpirationInDays: 90
+          S3BucketName:
+            Ref: mattercrlpaibucket5737CA07
+          S3ObjectAcl: BUCKET_OWNER_FULL_CONTROL
+      SigningAlgorithm: SHA256WITHECDSA
       Subject:
         CustomAttributes:
           Fn::If:
@@ -412,18 +496,18 @@ Resources:
                             - Fn::Split:
                                 - ","
                                 - Ref: paiOrganizations
-      Type: SUBORDINATE
-      KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
       Tags:
         - Key: matterCAType
           Value: pai
         - Key: matterPKITag
           Value: ""
+      Type: SUBORDINATE
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
   MatterStackPAIPAICSR017E82ECC:
     Type: AWS::SSM::Parameter
     Properties:
+      Name: /MatterStackPAI/PAI-CSR0
       Type: String
       Value:
         Fn::Join:
@@ -433,7 +517,6 @@ Resources:
               - Fn::GetAtt:
                   - CAPAI0
                   - CertificateSigningRequest
-      Name: /MatterStackPAI/PAI-CSR0
   CertificatePAI03F296F37:
     Type: Custom::AWS
     Properties:
@@ -466,7 +549,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452467"}}'
+            - '","physicalResourceId":{"id":"1708974755448"}}'
       Update:
         Fn::Join:
           - ""
@@ -492,7 +575,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452467"}}'
+            - '","physicalResourceId":{"id":"1708974755448"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePAI0CustomResourcePolicy48E777E4
@@ -533,7 +616,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452467"}}'
+            - '","physicalResourceId":{"id":"1708974755450"}}'
       Update:
         Fn::Join:
           - ""
@@ -549,7 +632,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452467"}}'
+            - '","physicalResourceId":{"id":"1708974755450"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePemPAI0CustomResourcePolicyBA6B7480
@@ -588,15 +671,17 @@ Resources:
     Type: AWS::ACMPCA::CertificateAuthority
     Properties:
       KeyAlgorithm: EC_prime256v1
-      SigningAlgorithm: SHA256WITHECDSA
+      KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
       RevocationConfiguration:
         CrlConfiguration:
-          Enabled: true
-          ExpirationInDays: 90
-          S3ObjectAcl : "BUCKET_OWNER_FULL_CONTROL"
-          S3BucketName: !Ref CrlBucketName6B0FB645
           CrlDistributionPointExtensionConfiguration:
             OmitExtension: true
+          Enabled: true
+          ExpirationInDays: 90
+          S3BucketName:
+            Ref: mattercrlpaibucket5737CA07
+          S3ObjectAcl: BUCKET_OWNER_FULL_CONTROL
+      SigningAlgorithm: SHA256WITHECDSA
       Subject:
         CustomAttributes:
           Fn::If:
@@ -721,18 +806,18 @@ Resources:
                             - Fn::Split:
                                 - ","
                                 - Ref: paiOrganizations
-      Type: SUBORDINATE
-      KeyStorageSecurityStandard: FIPS_140_2_LEVEL_3_OR_HIGHER
       Tags:
         - Key: matterCAType
           Value: pai
         - Key: matterPKITag
           Value: ""
+      Type: SUBORDINATE
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
   MatterStackPAIPAICSR1B2BD3BFA:
     Type: AWS::SSM::Parameter
     Properties:
+      Name: /MatterStackPAI/PAI-CSR1
       Type: String
       Value:
         Fn::Join:
@@ -742,7 +827,6 @@ Resources:
               - Fn::GetAtt:
                   - CAPAI1
                   - CertificateSigningRequest
-      Name: /MatterStackPAI/PAI-CSR1
   CertificatePAI1C5AB2E2B:
     Type: Custom::AWS
     Properties:
@@ -775,7 +859,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452468"}}'
+            - '","physicalResourceId":{"id":"1708974755453"}}'
       Update:
         Fn::Join:
           - ""
@@ -801,7 +885,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452468"}}'
+            - '","physicalResourceId":{"id":"1708974755453"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePAI1CustomResourcePolicy13F95E73
@@ -842,7 +926,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452468"}}'
+            - '","physicalResourceId":{"id":"1708974755453"}}'
       Update:
         Fn::Join:
           - ""
@@ -858,7 +942,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1694239452468"}}'
+            - '","physicalResourceId":{"id":"1708974755453"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePemPAI1CustomResourcePolicy83BE6455
@@ -1142,6 +1226,7 @@ Resources:
   DacInputS3ToSQSEncryptionKey0AD30D7E:
     Type: AWS::KMS::Key
     Properties:
+      EnableKeyRotation: true
       KeyPolicy:
         Statement:
           - Action: kms:*
@@ -1179,7 +1264,6 @@ Resources:
               Service: s3.amazonaws.com
             Resource: "*"
         Version: "2012-10-17"
-      EnableKeyRotation: true
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
   DacInputS3ToSQSqueueD59411ED:
@@ -1303,7 +1387,6 @@ Resources:
           s3 = boto3.client("s3")
 
           EVENTBRIDGE_CONFIGURATION = 'EventBridgeConfiguration'
-
           CONFIGURATION_TYPES = ["TopicConfigurations", "QueueConfigurations", "LambdaFunctionConfigurations"]
 
           def handler(event: dict, context):
@@ -1311,18 +1394,15 @@ Resources:
             error_message = ""
             try:
               props = event["ResourceProperties"]
-              bucket = props["BucketName"]
               notification_configuration = props["NotificationConfiguration"]
-              request_type = event["RequestType"]
               managed = props.get('Managed', 'true').lower() == 'true'
               stack_id = event['StackId']
-
+              old = event.get("OldResourceProperties", {}).get("NotificationConfiguration", {})
               if managed:
-                config = handle_managed(request_type, notification_configuration)
+                config = handle_managed(event["RequestType"], notification_configuration)
               else:
-                config = handle_unmanaged(bucket, stack_id, request_type, notification_configuration)
-
-              put_bucket_notification_configuration(bucket, config)
+                config = handle_unmanaged(props["BucketName"], stack_id, event["RequestType"], notification_configuration, old)
+              s3.put_bucket_notification_configuration(Bucket=props["BucketName"], NotificationConfiguration=config)
             except Exception as e:
               logging.exception("Failed to put bucket notification configuration")
               response_status = "FAILED"
@@ -1335,15 +1415,25 @@ Resources:
               return {}
             return notification_configuration
 
-          def handle_unmanaged(bucket, stack_id, request_type, notification_configuration):
-            external_notifications = find_external_notifications(bucket, stack_id)
+          def handle_unmanaged(bucket, stack_id, request_type, notification_configuration, old):
+            def with_id(n):
+              n['Id'] = f"{stack_id}-{hash(json.dumps(n, sort_keys=True))}"
+              return n
+
+            external_notifications = {}
+            existing_notifications = s3.get_bucket_notification_configuration(Bucket=bucket)
+            for t in CONFIGURATION_TYPES:
+              if request_type == 'Update':
+                  ids = [with_id(n) for n in old.get(t, [])]
+                  old_incoming_ids = [n['Id'] for n in ids]
+                  external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'] in old_incoming_ids]
+              elif request_type == 'Create':
+                  external_notifications[t] = [n for n in existing_notifications.get(t, [])]
+            if EVENTBRIDGE_CONFIGURATION in existing_notifications:
+              external_notifications[EVENTBRIDGE_CONFIGURATION] = existing_notifications[EVENTBRIDGE_CONFIGURATION]
 
             if request_type == 'Delete':
               return external_notifications
-
-            def with_id(notification):
-              notification['Id'] = f"{stack_id}-{hash(json.dumps(notification, sort_keys=True))}"
-              return notification
 
             notifications = {}
             for t in CONFIGURATION_TYPES:
@@ -1357,23 +1447,6 @@ Resources:
               notifications[EVENTBRIDGE_CONFIGURATION] = external_notifications[EVENTBRIDGE_CONFIGURATION]
 
             return notifications
-
-          def find_external_notifications(bucket, stack_id):
-            existing_notifications = get_bucket_notification_configuration(bucket)
-            external_notifications = {}
-            for t in CONFIGURATION_TYPES:
-              external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'].startswith(f"{stack_id}-")]
-
-            if EVENTBRIDGE_CONFIGURATION in existing_notifications:
-              external_notifications[EVENTBRIDGE_CONFIGURATION] = existing_notifications[EVENTBRIDGE_CONFIGURATION]
-
-            return external_notifications
-
-          def get_bucket_notification_configuration(bucket):
-            return s3.get_bucket_notification_configuration(Bucket=bucket)
-
-          def put_bucket_notification_configuration(bucket, notification_configuration):
-            s3.put_bucket_notification_configuration(Bucket=bucket, NotificationConfiguration=notification_configuration)
 
           def submit_response(event: dict, context, response_status: str, error_message: str):
             response_body = json.dumps(
@@ -1522,10 +1595,6 @@ Resources:
         S3Bucket:
           Fn::Sub: ${AWS::AccountId}-matter-cfn-deployment-assets
         S3Key: DACIssuingLambda.zip
-      Role:
-        Fn::GetAtt:
-          - SqsToDacIssuingLambdaLambdaFunctionServiceRoleB25CC72F
-          - Arn
       Environment:
         Variables:
           dacValidityInDays:
@@ -1533,6 +1602,10 @@ Resources:
       Handler: com.sample.Handler
       MemorySize: 512
       ReservedConcurrentExecutions: 55
+      Role:
+        Fn::GetAtt:
+          - SqsToDacIssuingLambdaLambdaFunctionServiceRoleB25CC72F
+          - Arn
       Runtime: java11
       Tags:
         - Key: matterPKITag
@@ -1559,14 +1632,14 @@ Resources:
   SqsToDacIssuingLambdaLambdaFunctionSqsEventSourceMatterStackPAIDacInputS3ToSQSqueue334B7A2D9472359E:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      FunctionName:
-        Ref: SqsToDacIssuingLambdaLambdaFunction63CBA51A
       BatchSize: 5
       Enabled: true
       EventSourceArn:
         Fn::GetAtt:
           - DacInputS3ToSQSqueueD59411ED
           - Arn
+      FunctionName:
+        Ref: SqsToDacIssuingLambdaLambdaFunction63CBA51A
       FunctionResponseTypes:
         - ReportBatchItemFailures
   LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB:
@@ -1603,7 +1676,8 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Handler: index.handler
-      Runtime: nodejs16.x
+      Runtime: nodejs18.x
+      Timeout: 900
       Code:
         S3Bucket:
           Fn::Sub: ${AWS::AccountId}-matter-cfn-deployment-assets
@@ -1662,6 +1736,7 @@ Resources:
   MatterPKIAuditLogsKMSKey8EB68491:
     Type: AWS::KMS::Key
     Properties:
+      EnableKeyRotation: true
       KeyPolicy:
         Statement:
           - Action: kms:*
@@ -1699,7 +1774,6 @@ Resources:
                     - :role/MatterAuditorRole
             Resource: "*"
         Version: "2012-10-17"
-      EnableKeyRotation: true
     UpdateReplacePolicy: Retain
     DeletionPolicy: Retain
     Condition: isMultiRegion
@@ -1940,9 +2014,6 @@ Resources:
   MatterAuditTrail535B0DA6:
     Type: AWS::CloudTrail::Trail
     Properties:
-      IsLogging: true
-      S3BucketName:
-        Ref: matterpkiauditlogsB56DAB62
       CloudWatchLogsLogGroupArn:
         Fn::GetAtt:
           - MatterAudit3BAC79D2
@@ -1963,17 +2034,26 @@ Resources:
                           - Arn
                       - /
       IncludeGlobalServiceEvents: true
+      IsLogging: true
       IsMultiRegionTrail: true
       KMSKeyId:
         Fn::GetAtt:
           - MatterPKIAuditLogsKMSKey8EB68491
           - Arn
+      S3BucketName:
+        Ref: matterpkiauditlogsB56DAB62
     DependsOn:
       - matterpkiauditlogsPolicyB878ED00
       - MatterAuditTrailLogsRoleDefaultPolicy5D8B82A7
       - MatterAuditTrailLogsRoleA5220186
     Condition: isMultiRegion
 Outputs:
+  CrlBucketUrl:
+    Description: The url of the S3 Bucket used for storing CRLs
+    Value:
+      Fn::GetAtt:
+        - mattercrlpaibucket5737CA07
+        - WebsiteURL
   CertArnPAI0:
     Description: The certificate Arn for PAI0
     Value:

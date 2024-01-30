@@ -20,6 +20,10 @@ Parameters:
     Type: String
     Default: ""
     Description: The Organizational Unit associated with this PAA.
+  crlBucketName:
+    Type: String
+    Default: "matter-crl-paa-bucket"
+    Description: The unique name for the S3 bucket used to store the CRLs for this CA.
 Resources:
   CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507:
     Type: AWS::IAM::Role
@@ -65,10 +69,10 @@ Resources:
     DeletionPolicy: Delete
   CrlBucketName6B0FB645:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: Delete
     Properties:
-      BucketName: "matter-crl-bucket"
-      AccessControl: Private
+      BucketName:
+        Ref: crlBucketName
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerPreferred
@@ -80,9 +84,9 @@ Resources:
         - Key: "Purpose"
           Value: "AWSPCA Certificate Revocation List"
       PublicAccessBlockConfiguration:
-        RestrictPublicBuckets: True
+        RestrictPublicBuckets: False
         BlockPublicAcls: True
-        BlockPublicPolicy: True
+        BlockPublicPolicy: False
         IgnorePublicAcls: True
   CrlBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -103,6 +107,21 @@ Resources:
             Principal:
               Service:
                 - "acm-pca.amazonaws.com"
+  CrlPublicBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CrlBucketName6B0FB645
+      PolicyDocument:
+        Statement:
+        - Sid: AllowPublicGetObjectAccessForCRL
+          Action:
+            - "s3:GetObject"
+          Effect: "Allow"
+          Resource:
+            - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645, "/crl/*"]]
+          Principal:
+            AWS:
+              - "*"
   CAPAA:
     Type: AWS::ACMPCA::CertificateAuthority
     Properties:
@@ -113,10 +132,7 @@ Resources:
           Enabled: true
           ExpirationInDays: 90
           S3ObjectAcl : "BUCKET_OWNER_FULL_CONTROL"
-          S3BucketName:
-            Fn::GetAtt:
-              - CrlBucketName6B0FB645
-              - BucketName
+          S3BucketName: !Ref CrlBucketName6B0FB645
           CrlDistributionPointExtensionConfiguration:
             OmitExtension: true
       Subject:

@@ -29,8 +29,8 @@ Parameters:
     Description: The Organizational Unit associated with this PAI
   crlBucketName:
     Type: String
-    Default: ""
-    Description: The Bucket Name for the CRL Bucket
+    Default: "matter-crl-pai-bucket"
+    Description: The unique name for the S3 bucket used to store the CRLs for this CA.
 Conditions:
   PidsWereProvided:
     Fn::Not:
@@ -220,6 +220,61 @@ Resources:
       Timeout: 120
     DependsOn:
       - AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2
+  CrlBucketName6B0FB645:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName:
+        Ref: crlBucketName
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags: 
+        - Key: "Purpose"
+          Value: "AWSPCA Certificate Revocation List"
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: False
+        BlockPublicAcls: True
+        BlockPublicPolicy: False
+        IgnorePublicAcls: True
+  CrlBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CrlBucketName6B0FB645
+      PolicyDocument:
+        Statement:
+          - Sid: AllowAWSPCAPutObjectAccessForCRLAndChainCertificates
+            Action:
+              - "s3:GetBucketAcl"
+              - "s3:GetBucketLocation"
+              - "s3:PutObject"
+              - "s3:PutObjectAcl"
+            Effect: "Allow"
+            Resource:
+              - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645, "/*"]]
+              - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645]]
+            Principal:
+              Service:
+                - "acm-pca.amazonaws.com"
+  CrlPublicBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CrlBucketName6B0FB645
+      PolicyDocument:
+        Statement:
+        - Sid: AllowPublicGetObjectAccessForCRL
+          Action:
+            - "s3:GetObject"
+          Effect: "Allow"
+          Resource:
+            - !Join ["", ["arn:aws:s3:::", !Ref CrlBucketName6B0FB645, "/crl/*"]]
+          Principal:
+            AWS:
+              - "*"
   CAPAI0:
     Type: AWS::ACMPCA::CertificateAuthority
     Properties:
@@ -230,7 +285,7 @@ Resources:
           Enabled: true
           ExpirationInDays: 90
           S3ObjectAcl : "BUCKET_OWNER_FULL_CONTROL"
-          S3BucketName: Ref: crlBucketName
+          S3BucketName: !Ref CrlBucketName6B0FB645
           CrlDistributionPointExtensionConfiguration:
             OmitExtension: true
       Subject:
@@ -534,6 +589,14 @@ Resources:
     Properties:
       KeyAlgorithm: EC_prime256v1
       SigningAlgorithm: SHA256WITHECDSA
+      RevocationConfiguration:
+        CrlConfiguration:
+          Enabled: true
+          ExpirationInDays: 90
+          S3ObjectAcl : "BUCKET_OWNER_FULL_CONTROL"
+          S3BucketName: !Ref CrlBucketName6B0FB645
+          CrlDistributionPointExtensionConfiguration:
+            OmitExtension: true
       Subject:
         CustomAttributes:
           Fn::If:

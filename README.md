@@ -2,7 +2,7 @@
 
 This example demonstrates the use of AWS CDK to set up Public Key Infrastructure (PKI) infrastructure using AWS Private CA to help you meet the requirements of the Matter PKI Certificate Policy (CP) approved on December 19, 2022. Matter is a new standard for smart home security and device interoperability. Matter uses X.509 digital certificates to identify devices. Matter certificates can be issued only by CAs that comply with the Matter PKI Certificate Policy (CP). For more details about Matter, please see https://csa-iot.org/all-solutions/matter/.
 
-The `cdk.json` file in this module instructs the CDK Toolkit how to deploy this sample into your AWS account. You can use this example to create Matter Product Attestation Authorities (PAA), Product Attestion Intermediates (PAI), AWS Identity and Access Management (IAM) roles and configure logging and log retention.
+The `cdk.json` file in this module instructs the CDK Toolkit how to deploy this sample into your AWS account. You can use this example to create Matter Product Attestation Authorities (PAA), Product Attestion Intermediates (PAI), AWS Identity and Access Management (IAM) roles and configure logging and log retention. Please note that in order for the DCL to view your Certificate Authority's CRLs, you must disable Block Public Access for your account.
 
 ## Multi-Party authorization with Change Manager
 
@@ -64,7 +64,7 @@ When deploying the application, you can configure it to support different use ca
    (see [AWS Cloud Development Kit documentation](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-environment)):
 
    ```
-   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY> --parameters crlBucketName=<CRL_BUCKET_NAME> --parameters paiCommonNames=<CN1,...> --parameters paiOrganizations=<O1,...>
+   cdk deploy --context generatePaiCnt=<NUM_PAI> --parameters productIds=<PRODUCT_ID1,...> --profile <YOUR_PROFILE_FOR_DIFFERENT_REGION> --parameters {validityInDays=<PAI_VALIDITY>|validityEndDate=YYYYMMDDHHMMSS} --parameters paaArn=<PAA_ARN> --parameters dacValidityInDays=<DAC_VALIDITY> --parameters paiCommonNames=<CN1,...> --parameters paiOrganizations=<O1,...>
    ```
 5. To add more PAIs to the existing infrastructure
 
@@ -108,13 +108,13 @@ When deploying the application, you can configure it to support different use ca
 10. `--parameters paiCommonNames=<CN1>,<CN2>,...` - CommonNames (CN) are included in the Subjects of the PAIs. Note that the number of CommonNames provided should equal the `generatePaiCnt` parameter's value.
 11. `--parameters paiOrganizations=<O1>,<02>,...` - Organizations (O) are included in the Subjects of the PAIs. Note that the number of Organizations provided should equal the `generatePaiCnt` parameter's value.
 12. `--parameters paiOrganizationalUnits=<OU1>,<0U2>,...` - If set, these OrganizationalUnits (OU) are included in the Subjects of the PAIs. Note that the number of OrganizationalUnits provided should equal the `generatePaiCnt` parameter's value.
-13. `--parameters crlBucketName=<s3BucektName>` - This sets the S3 Bucket your PAIs will use to store their CRL.
 
 ### Context options
 1. `--context generatePaiCnt=<NUM>` - If set, `<NUM>` new PAIs derived from PAA are created.
 2. `--context generatePaa=1` - If set, a new PAA is generated, otherwise an existing PAA is expected (see `paaArn` parameter). This
    option is only used when `generatePaiCnt` isn't set.
 3. `--context stackNamePrefix=<PREFIX>` - Optionally allows several PKI infrastructures to co-exist under different names.
+4. `--context crlBucketName=<NAME>` - Optionally allows customized CRL S3 Bucket names.
 
 ### Hard-Coded Values
 The following list contains some of the values that are hard-coded into the infrastructure. They can all be changed by modifying the CDK code or the CFN template directly.

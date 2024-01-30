@@ -9,7 +9,7 @@ import {Template} from 'aws-cdk-lib/assertions';
 import {MatterStack} from "../lib/matterStacks";
 
 function common(app: App, genPaiCnt: string | undefined) {
-  const stack = new MatterStack(app, 'MyTestStack', "", genPaiCnt);
+  const stack = new MatterStack(app, 'MyTestStack', "", genPaiCnt, undefined);
   return Template.fromStack(stack);
 }
 

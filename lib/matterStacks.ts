@@ -16,6 +16,7 @@ import {
     CustomResourceProviderRuntime,
     Duration,
     Fn, ICfnConditionExpression, ICfnRuleConditionExpression,
+    RemovalPolicy,
     Stack,
     Tags, Token
 } from 'aws-cdk-lib';
@@ -32,7 +33,7 @@ import {
     ServicePrincipal
 } from 'aws-cdk-lib/aws-iam';
 import {S3EventSelector, Trail} from "aws-cdk-lib/aws-cloudtrail"
-import {Bucket, BucketEncryption, CfnBucket, IBucket, StorageClass} from 'aws-cdk-lib/aws-s3';
+import {Bucket, BucketAccessControl, BucketEncryption, CfnBucket, ObjectOwnership, StorageClass} from 'aws-cdk-lib/aws-s3';
 import {Schedule} from "aws-cdk-lib/aws-events";
 import {BackupPlan, BackupPlanRule, BackupResource, BackupVault} from "aws-cdk-lib/aws-backup";
 import {LogGroup, MetricFilter, RetentionDays} from "aws-cdk-lib/aws-logs";
@@ -54,7 +55,6 @@ export class MatterStack extends Stack {
 
     public static readonly matterPKITag = "matterPKITag";       // The tag that should be attached to all PAIs created in PCA.
     public static readonly matterCATypeTag = "matterCAType";    // The tag that should be attached to all CAs created in PCA and have value "paa" or "pai" only.
-    public static readonly matterCrlBucketName = "matter-crl-bucket";
 
     public static readonly MATTER_ISSUE_PAI_ROLE_NAME =  "MatterIssuePAIRole"
     public static readonly MATTER_MANAGE_PAA_ROLE_NAME = "MatterManagePAARole"
@@ -63,7 +63,7 @@ export class MatterStack extends Stack {
     public static readonly MATTER_ISSUE_DAC_ROLE = "MatterIssueDACRole"
     private static readonly matterPKIRolesPath = "/MatterPKI/";
 
-    constructor(scope: Construct, id: string, prefix: string, genPaiCnt: string | undefined) {
+    constructor(scope: Construct, id: string, prefix: string, genPaiCnt: string | undefined, crlBucketName: string | undefined) {
         super(scope, id);
 
         const root = genPaiCnt === undefined;
@@ -72,6 +72,8 @@ export class MatterStack extends Stack {
 
         let paaRegion: string = this.region;
         if (root) {
+            const paaCrlBucketName = (crlBucketName === undefined) ? 'matter-crl-paa-bucket' : crlBucketName;
+
             // Create Or Fetch PAA
             let paaArn: string;
             if (this.node.tryGetContext('generatePaa') === undefined) {
@@ -112,7 +114,7 @@ export class MatterStack extends Stack {
                     default: ''
                 }).valueAsString;
 
-                const crlBucket = this.createMatterCrlBucket(MatterStack.matterCrlBucketName);
+                const crlBucket = this.createMatterCrlBucket(prefix, paaCrlBucketName);
                 const validity = this.createPcaValidityInstance(validityInDays, validityEndDate);
                 const paaActivation = this.createPAA(commonName, crlBucket.bucketName, paaOrganization, paaOrganizationUnit, validity, vendorId);
                 paaArn = paaActivation.certificateAuthorityArn
@@ -126,6 +128,8 @@ export class MatterStack extends Stack {
             this.matterIssueDACRole = this.createMatterIssueDACRole(prefix + MatterStack.MATTER_ISSUE_DAC_ROLE);
         }
         else {
+            const paiCrlBucketName = (crlBucketName === undefined) ? 'matter-crl-paa-bucket' : crlBucketName;
+
             // Create PAI
             let prodIdsInput = new CfnParameter(this, "productIds", {
                 type: "String",
@@ -161,10 +165,6 @@ export class MatterStack extends Stack {
                 type: "String",
                 description: "The Common Name for this PAI"
             }).valueAsString;
-            let crlBucketName = new CfnParameter(this, 'crlBucketName', {
-                type: "String",
-                description: "The Bucket Name for the CRL Bucket"
-            }).valueAsString;
             let organizations = new CfnParameter(this, 'paiOrganizations', {
                 type: "String",
                 description: "The Organization associated with this PAI"
@@ -183,10 +183,11 @@ export class MatterStack extends Stack {
             const paaPem = this.getCertificatePem(id, paaArn, paaRegion);
             const validity = this.createPcaValidityStrings(validityInDays, validityEndDate);
             for (let index = 0; index < parseInt(genPaiCnt); index++) {
+                const crlBucket = this.createMatterCrlBucket(prefix, paiCrlBucketName);
                 const commonName = Fn.select(index, Fn.split(',', commonNames));
                 const organization = Fn.select(index, Fn.split(',', organizations));
                 const organizationalUnit = Fn.conditionIf(ouSet.logicalId, Fn.select(index, Fn.split(',', organizationalUnits)), '');
-                this.createPAI(commonName, crlBucketName, organization, organizationalUnit, ouSet, validity, vendorId, index, prodIds, prodIdsSet, paaArn, paaRegion, paaPem);
+                this.createPAI(commonName, crlBucket.bucketName, organization, organizationalUnit, ouSet, validity, vendorId, index, prodIds, prodIdsSet, paaArn, paaRegion, paaPem);
             }
 
             // Global resources.
@@ -621,18 +622,22 @@ export class MatterStack extends Stack {
     }
 
     // Creates the S3 bucket that will hold the CRLs for the Matter PKI.
-    private createMatterCrlBucket(name: string): Bucket {
-        const matterCrlBucket = new Bucket(this, name, {
-            versioned: true,
+    private createMatterCrlBucket(prefix: string, crlBucketName: string): Bucket {
+        const matterCrlBucket = new Bucket(this, prefix + crlBucketName, {
+            autoDeleteObjects: true,
+            versioned: false,
             blockPublicAccess: {
-                blockPublicPolicy: true,
-                restrictPublicBuckets: true,
+                blockPublicPolicy: false,
+                restrictPublicBuckets: false,
                 blockPublicAcls: true,
                 ignorePublicAcls: true
             },
             encryption: BucketEncryption.S3_MANAGED,
             enforceSSL: true,
+            removalPolicy: RemovalPolicy.DESTROY
         });
+
+        matterCrlBucket.grantPublicAccess("crl/*");
 
         matterCrlBucket.addToResourcePolicy(
             new PolicyStatement({
@@ -649,11 +654,6 @@ export class MatterStack extends Stack {
         new CfnOutput(this, 'CrlBucketUrl', {
             value: matterCrlBucket.bucketWebsiteUrl,
             description: 'The url of the S3 Bucket used for storing CRLs',
-        });
-
-        new CfnOutput(this, 'CrlBucketName', {
-            value: matterCrlBucket.bucketName,
-            description: 'The name of the S3 Bucket used for storing CRLs',
         });
 
         return matterCrlBucket;

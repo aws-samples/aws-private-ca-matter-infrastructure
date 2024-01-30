@@ -27,6 +27,10 @@ Parameters:
     Type: String
     Default: ""
     Description: The Organizational Unit associated with this PAI
+  crlBucketName:
+    Type: String
+    Default: matter-crl-pai-bucket
+    Description: The CRL Bucket Name for this PAI
 Conditions:
   PidsWereProvided:
     Fn::Not:
@@ -153,7 +157,11 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
+<<<<<<< HEAD
             - '","physicalResourceId":{"id":"1708974755310"}}'
+=======
+            - '","physicalResourceId":{"id":"1708980779095"}}'
+>>>>>>> 81ecdd1 (Add support for disabling CDP Extension)
       Update:
         Fn::Join:
           - ""
@@ -165,7 +173,11 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
+<<<<<<< HEAD
             - '","physicalResourceId":{"id":"1708974755310"}}'
+=======
+            - '","physicalResourceId":{"id":"1708980779095"}}'
+>>>>>>> 81ecdd1 (Add support for disabling CDP Extension)
       InstallLatestAwsSdk: true
     DependsOn:
       - PaaPemMatterStackPAICustomResourcePolicy93FEF6DD
@@ -223,7 +235,8 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-      BucketName: matter-crl-pai-bucket
+      BucketName:
+        Ref: crlBucketName
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: false
@@ -232,6 +245,8 @@ Resources:
       Tags:
         - Key: aws-cdk:auto-delete-objects
           Value: "true"
+        - Key: matterPKITag
+          Value: ""
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
   mattercrlpaibucketPolicyEE274CF0:
@@ -549,7 +564,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755448"}}'
+            - '","physicalResourceId":{"id":"1708980779226"}}'
       Update:
         Fn::Join:
           - ""
@@ -575,7 +590,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755448"}}'
+            - '","physicalResourceId":{"id":"1708980779226"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePAI0CustomResourcePolicy48E777E4
@@ -616,7 +631,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755450"}}'
+            - '","physicalResourceId":{"id":"1708980779228"}}'
       Update:
         Fn::Join:
           - ""
@@ -632,7 +647,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755450"}}'
+            - '","physicalResourceId":{"id":"1708980779228"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePemPAI0CustomResourcePolicyBA6B7480
@@ -859,7 +874,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755453"}}'
+            - '","physicalResourceId":{"id":"1708980779231"}}'
       Update:
         Fn::Join:
           - ""
@@ -885,7 +900,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755453"}}'
+            - '","physicalResourceId":{"id":"1708980779231"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePAI1CustomResourcePolicy13F95E73
@@ -926,7 +941,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755453"}}'
+            - '","physicalResourceId":{"id":"1708980779231"}}'
       Update:
         Fn::Join:
           - ""
@@ -942,7 +957,7 @@ Resources:
                 - Fn::Split:
                     - ":"
                     - Ref: paaArn
-            - '","physicalResourceId":{"id":"1708974755453"}}'
+            - '","physicalResourceId":{"id":"1708980779231"}}'
       InstallLatestAwsSdk: true
     DependsOn:
       - CertificatePemPAI1CustomResourcePolicy83BE6455

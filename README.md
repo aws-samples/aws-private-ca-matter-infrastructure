@@ -108,13 +108,13 @@ When deploying the application, you can configure it to support different use ca
 10. `--parameters paiCommonNames=<CN1>,<CN2>,...` - CommonNames (CN) are included in the Subjects of the PAIs. Note that the number of CommonNames provided should equal the `generatePaiCnt` parameter's value.
 11. `--parameters paiOrganizations=<O1>,<02>,...` - Organizations (O) are included in the Subjects of the PAIs. Note that the number of Organizations provided should equal the `generatePaiCnt` parameter's value.
 12. `--parameters paiOrganizationalUnits=<OU1>,<0U2>,...` - If set, these OrganizationalUnits (OU) are included in the Subjects of the PAIs. Note that the number of OrganizationalUnits provided should equal the `generatePaiCnt` parameter's value.
+13. `--parameters crlBucketName=<s3BucketName>` - If set, this sets the S3 Bucket name that your PAA/PAIs will use to store their CRLs.
 
 ### Context options
 1. `--context generatePaiCnt=<NUM>` - If set, `<NUM>` new PAIs derived from PAA are created.
 2. `--context generatePaa=1` - If set, a new PAA is generated, otherwise an existing PAA is expected (see `paaArn` parameter). This
    option is only used when `generatePaiCnt` isn't set.
 3. `--context stackNamePrefix=<PREFIX>` - Optionally allows several PKI infrastructures to co-exist under different names.
-4. `--context crlBucketName=<NAME>` - Optionally allows customized CRL S3 Bucket names.
 
 ### Hard-Coded Values
 The following list contains some of the values that are hard-coded into the infrastructure. They can all be changed by modifying the CDK code or the CFN template directly.

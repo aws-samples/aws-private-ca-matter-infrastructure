@@ -66,7 +66,7 @@ export class MatterStack extends Stack {
     public static readonly MATTER_ISSUE_DAC_ROLE = "MatterIssueDACRole"
     private static readonly matterPKIRolesPath = "/MatterPKI/";
 
-    constructor(scope: Construct, id: string, prefix: string, genPaiCnt: string | undefined, crlBucketName: string | undefined) {
+    constructor(scope: Construct, id: string, prefix: string, genPaiCnt: string | undefined) {
         super(scope, id);
 
         const root = genPaiCnt === undefined;
@@ -75,8 +75,6 @@ export class MatterStack extends Stack {
 
         let paaRegion: string = this.region;
         if (root) {
-            const paaCrlBucketName = prefix + (crlBucketName ?? MatterStack.MATTER_PAA_CRL_BUCKET_NAME);
-
             // Create Or Fetch PAA
             let paaArn: string;
             if (this.node.tryGetContext('generatePaa') === undefined) {
@@ -116,8 +114,13 @@ export class MatterStack extends Stack {
                     description: "The Organizational Unit associated with this PAA.",
                     default: ''
                 }).valueAsString;
+                let crlBucketName = new CfnParameter(this, 'crlBucketName', {
+                    type: "String",
+                    description: "The CRL Bucket Name for this PAA",
+                    default: MatterStack.MATTER_PAA_CRL_BUCKET_NAME
+                }).valueAsString;
 
-                const crlBucket = this.createMatterCrlBucket(paaCrlBucketName);
+                const crlBucket = this.createMatterCrlBucket(MatterStack.MATTER_PAA_CRL_BUCKET_NAME, crlBucketName);
                 const validity = this.createPcaValidityInstance(validityInDays, validityEndDate);
                 const paaActivation = this.createPAA(commonName, crlBucket.bucketName, paaOrganization, paaOrganizationUnit, validity, vendorId);
                 paaArn = paaActivation.certificateAuthorityArn
@@ -131,8 +134,6 @@ export class MatterStack extends Stack {
             this.matterIssueDACRole = this.createMatterIssueDACRole(prefix + MatterStack.MATTER_ISSUE_DAC_ROLE);
         }
         else {
-            const paiCrlBucketName = prefix + (crlBucketName ?? MatterStack.MATTER_PAI_CRL_BUCKET_NAME);
-
             // Create PAI
             let prodIdsInput = new CfnParameter(this, "productIds", {
                 type: "String",
@@ -177,6 +178,11 @@ export class MatterStack extends Stack {
                 description: "The Organizational Unit associated with this PAI",
                 default: ''
             }).valueAsString;
+            let crlBucketName = new CfnParameter(this, 'crlBucketName', {
+                type: "String",
+                description: "The CRL Bucket Name for this PAI",
+                default: MatterStack.MATTER_PAI_CRL_BUCKET_NAME
+            }).valueAsString;
 
             const ouSet = new CfnCondition(this, "paiOUWasProvided", {
                 expression: Fn.conditionNot(Fn.conditionEquals(organizationalUnits, ''))
@@ -185,7 +191,7 @@ export class MatterStack extends Stack {
             const vendorId = this.getPaaVendorId(paaArn, paaRegion);
             const paaPem = this.getCertificatePem(id, paaArn, paaRegion);
             const validity = this.createPcaValidityStrings(validityInDays, validityEndDate);
-            const crlBucket = this.createMatterCrlBucket(paiCrlBucketName);
+            const crlBucket = this.createMatterCrlBucket(MatterStack.MATTER_PAI_CRL_BUCKET_NAME, crlBucketName);
             for (let index = 0; index < parseInt(genPaiCnt); index++) {
                 const commonName = Fn.select(index, Fn.split(',', commonNames));
                 const organization = Fn.select(index, Fn.split(',', organizations));
@@ -625,8 +631,8 @@ export class MatterStack extends Stack {
     }
 
     // Creates the S3 bucket that will hold the CRLs for the Matter PKI.
-    private createMatterCrlBucket(crlBucketName: string): Bucket {
-        const matterCrlBucket = new Bucket(this, crlBucketName, {
+    private createMatterCrlBucket(bucketId: string, crlBucketName: string): Bucket {
+        const matterCrlBucket = new Bucket(this, bucketId, {
             autoDeleteObjects: true,
             versioned: false,
             bucketName: crlBucketName,
@@ -638,8 +644,10 @@ export class MatterStack extends Stack {
             },
             encryption: BucketEncryption.S3_MANAGED,
             enforceSSL: true,
-            removalPolicy: RemovalPolicy.DESTROY
+            removalPolicy: RemovalPolicy.DESTROY,
         });
+
+        Tags.of(matterCrlBucket).add(MatterStack.matterPKITag, "");
 
         matterCrlBucket.grantPublicAccess("crl/*");
 

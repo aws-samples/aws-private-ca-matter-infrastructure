@@ -20,6 +20,10 @@ Parameters:
     Type: String
     Default: ""
     Description: The Organizational Unit associated with this PAA.
+  crlBucketName:
+    Type: String
+    Default: matter-crl-paa-bucket
+    Description: The CRL Bucket Name for this PAA
 Resources:
   CustomLambdaFunctionUtilsCustomResourceProviderRole8D839507:
     Type: AWS::IAM::Role
@@ -70,7 +74,8 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-      BucketName: matter-crl-paa-bucket
+      BucketName:
+        Ref: crlBucketName
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: false
@@ -79,6 +84,8 @@ Resources:
       Tags:
         - Key: aws-cdk:auto-delete-objects
           Value: "true"
+        - Key: matterPKITag
+          Value: ""
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
   mattercrlpaabucketPolicyA85D80D7:

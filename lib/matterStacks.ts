@@ -117,10 +117,10 @@ export class MatterStack extends Stack {
                 let crlBucketName = new CfnParameter(this, 'crlBucketName', {
                     type: "String",
                     description: "The CRL Bucket Name for this PAA",
-                    default: MatterStack.MATTER_PAA_CRL_BUCKET_NAME
+                    default: ''
                 }).valueAsString;
 
-                const crlBucket = this.createMatterCrlBucket(MatterStack.MATTER_PAA_CRL_BUCKET_NAME, crlBucketName);
+                const crlBucket = this.createMatterCrlBucket(MatterStack.MATTER_PAA_CRL_BUCKET_NAME, this.getCrlBucketName(crlBucketName, prefix));
                 const validity = this.createPcaValidityInstance(validityInDays, validityEndDate);
                 const paaActivation = this.createPAA(commonName, crlBucket.bucketName, paaOrganization, paaOrganizationUnit, validity, vendorId);
                 paaArn = paaActivation.certificateAuthorityArn
@@ -191,7 +191,7 @@ export class MatterStack extends Stack {
             const vendorId = this.getPaaVendorId(paaArn, paaRegion);
             const paaPem = this.getCertificatePem(id, paaArn, paaRegion);
             const validity = this.createPcaValidityStrings(validityInDays, validityEndDate);
-            const crlBucket = this.createMatterCrlBucket(MatterStack.MATTER_PAI_CRL_BUCKET_NAME, crlBucketName);
+            const crlBucket = this.createMatterCrlBucket(MatterStack.MATTER_PAI_CRL_BUCKET_NAME, this.getCrlBucketName(crlBucketName, prefix));
             for (let index = 0; index < parseInt(genPaiCnt); index++) {
                 const commonName = Fn.select(index, Fn.split(',', commonNames));
                 const organization = Fn.select(index, Fn.split(',', organizations));
@@ -239,6 +239,17 @@ export class MatterStack extends Stack {
                 inst.cfnOptions.condition = createCondition;
             });
         }
+    }
+
+    private getCrlBucketName(crlBucketName: string, prefix: string) {
+        const crlBucketNameProvided = new CfnCondition(this, 'crlBucketNameProvided', {
+            expression: Fn.conditionNot(Fn.conditionEquals(crlBucketName, ''))
+        });
+        return Fn.conditionIf(
+                crlBucketNameProvided.logicalId,
+                Fn.join('', [prefix, crlBucketName]),
+                Fn.ref('AWS::NoValue'))
+            .toString();
     }
 
     private getPaaVendorId(paaArn: string, paaRegion: string) {
@@ -633,7 +644,6 @@ export class MatterStack extends Stack {
     // Creates the S3 bucket that will hold the CRLs for the Matter PKI.
     private createMatterCrlBucket(bucketId: string, crlBucketName: string): Bucket {
         const matterCrlBucket = new Bucket(this, bucketId, {
-            autoDeleteObjects: true,
             versioned: false,
             bucketName: crlBucketName,
             blockPublicAccess: {
@@ -644,7 +654,7 @@ export class MatterStack extends Stack {
             },
             encryption: BucketEncryption.S3_MANAGED,
             enforceSSL: true,
-            removalPolicy: RemovalPolicy.DESTROY,
+            removalPolicy: RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
         });
 
         Tags.of(matterCrlBucket).add(MatterStack.matterPKITag, "");
@@ -1170,6 +1180,11 @@ export class MatterStack extends Stack {
         Tags.of(s3ToSqs.deadLetterQueue!.queue).add(MatterStack.matterPKITag, "");
         Tags.of(s3ToSqs.s3Bucket!).add(MatterStack.matterPKITag, "");
         Tags.of(s3ToSqs.s3LoggingBucket!).add(MatterStack.matterPKITag, "");
+
+        new CfnOutput(this, 'DacBucketName', {
+            value: s3ToSqs.s3Bucket?.bucketName!,
+            description: 'Bucket to upload CSR PEM files, so the listening Lambda Function produces DACs for them.',
+        });
 
         s3ToSqs.s3LoggingBucket?.grantRead(this.matterAuditorRole);
 

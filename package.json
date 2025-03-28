@@ -32,7 +32,7 @@
     "@aws-sdk/client-acm-pca": "^3.645.0",
     "@aws-solutions-constructs/aws-s3-sqs": "^2.68.0",
     "@aws-solutions-constructs/aws-sqs-lambda": "^2.68.0",
-    "aws-cdk-lib": "2.177.0",
+    "aws-cdk-lib": "2.185.0",
     "constructs": "^10.3.0",
     "npm": "^10.8.3",
     "prettier": "^3.3.3"

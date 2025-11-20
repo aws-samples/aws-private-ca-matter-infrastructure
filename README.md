@@ -21,6 +21,7 @@ From the example’s root folder, run the following commands:
 ```bash
 npm install -g aws-cdk
 npm install
+gradle wrapper --gradle-version 7.5.1
 ./gradlew build
 npm run build
 ```
@@ -121,6 +122,33 @@ The following list contains some of the values that are hard-coded into the infr
 1. `Audit Logging Bucket Object Retention` - Objects in the S3 audit logging bucket are retained for `5 years`.
 2. `Audit Logging Bucket Glacier Transition` - Object in the S3 audit logging bucket are transitioned to Glacier after `2 months`.
 3. `CloudWatch Log Group Retention` - Logs in the audit LogGroup are maintained in CloudWatch for `2 months`.
+
+## Troubleshooting
+
+### Public policies are prevented by the BlockPublicPolicy setting in S3 Block Public Access.
+
+With the introduction of default public policy restriction your stack creating might fail with the following error: 
+
+> Resource handler returned message: "User: arn:aws:sts::<account>:assumed-role/<id>/AWSCloudFormation is not authorized to perform: s3:PutBucketPolicy on resource: "arn:aws:s3:::matterstackpaa-mattercrlpaabucket<id>" because public policies are prevented by the BlockPublicPolicy setting in S3 Block Public Access. (Service: S3, Status Code: 403, Request ID: <id>, Extended Request ID: <id>) (SDK Attempt Count: 1)" (RequestToken: <id>, HandlerErrorCode: AccessDenied)
+
+
+In such case check your account configuration
+```bash
+aws s3control get-public-access-block --account-id <account>
+```
+
+If `BlockPublicPolicy` is set to True, disable it with the following command
+```bash
+aws s3control put-public-access-block \
+  --account-id <account> \
+  --public-access-block-configuration \
+    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+```
+
+Alternatively, disable public access by removing the following statement in the `createMatterCrlBucket()` function in matterStacks.ts
+```typescript
+matterCrlBucket.grantPublicAccess("crl/*");
+```
 
 ## Generate a CloudFormation Template
 

@@ -22,19 +22,19 @@
     "@types/babel__traverse": "^7.20.6",
     "@types/jest": "^29.5.12",
     "@types/node": "^22.5.4",
-    "aws-cdk": "2.155.0",
+    "aws-cdk": "2.x",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "~5.5.4"
   },
   "dependencies": {
-    "@aws-sdk/client-acm-pca": "^3.645.0",
-    "@aws-solutions-constructs/aws-s3-sqs": "^2.68.0",
-    "@aws-solutions-constructs/aws-sqs-lambda": "^2.68.0",
-    "aws-cdk-lib": "2.189.1",
-    "constructs": "^10.3.0",
-    "npm": "^10.8.3",
-    "prettier": "^3.3.3"
+    "@aws-sdk/client-acm-pca": "^3.x",
+    "@aws-solutions-constructs/aws-s3-sqs": "^2.x",
+    "@aws-solutions-constructs/aws-sqs-lambda": "^2.x",
+    "aws-cdk-lib": "2.x",
+    "constructs": "^10.x",
+    "npm": "^11.x",
+    "prettier": "^3.x"
   }
 }

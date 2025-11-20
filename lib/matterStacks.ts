@@ -1193,7 +1193,7 @@ export class MatterStack extends Stack {
             lambdaFunctionProps: {
                 // https://docs.aws.amazon.com/lambda/latest/dg/java-package.html#java-package-gradle
                 code: lambda.Code.fromAsset('lambda/build/distributions/lambda.zip'),
-                runtime: lambda.Runtime.JAVA_11,
+                runtime: lambda.Runtime.JAVA_17,
                 handler: 'com.sample.Handler',
 
                 timeout: lambdaTimeout,

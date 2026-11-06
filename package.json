@@ -20,13 +20,13 @@
   },
   "devDependencies": {
     "@types/babel__traverse": "^7.20.6",
-    "@types/jest": "^29.5.12",
-    "@types/node": "^22.5.4",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.6",
     "aws-cdk": "2.x",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.2.5",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.15",
     "ts-node": "^10.9.2",
-    "typescript": "~5.5.4"
+    "typescript": "~6.0.3"
   },
   "dependencies": {
     "@aws-sdk/client-acm-pca": "^3.x",
@@ -34,7 +34,11 @@
     "@aws-solutions-constructs/aws-sqs-lambda": "^2.x",
     "aws-cdk-lib": "2.x",
     "constructs": "^10.x",
-    "npm": "^11.x",
+    "npm": "^12.x",
     "prettier": "^3.x"
+  },
+  "overrides": {
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.4"
   }
 }
